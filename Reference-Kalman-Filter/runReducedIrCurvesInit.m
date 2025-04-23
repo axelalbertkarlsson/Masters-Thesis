@@ -1,4 +1,4 @@
-measurementPath = '.\measurement';
+measurementPath = 'Reference-Kalman-Filter\measurement';
 
 addpath(measurementPath)
 
