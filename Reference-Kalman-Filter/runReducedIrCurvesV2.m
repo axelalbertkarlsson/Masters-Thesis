@@ -1,4 +1,4 @@
-% Ricatti recursion
+% Ricatti recursions
 
 kx = [1E5 ; 1E0 ; 1E2 ; 1E1];
 
