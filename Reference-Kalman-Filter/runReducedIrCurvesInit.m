@@ -3,7 +3,7 @@ measurementPath = '.\measurement';
 addpath(measurementPath)
 
 p = 100;
-nSteps = 16; % Number of steps to model cuts/hikes from the central bank
+nSteps = 16; % Number of steps to model cuts/hikes from the central banks
 
 
 % currency = 'CHF'; 
