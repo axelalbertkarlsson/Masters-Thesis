@@ -60,6 +60,11 @@ for t=1:K.nt
   w(t,:) = K.w{t};
 end
 
+%%% Start: Tillagt av CJ för \psi_0 %%%
+[a_x, Sigma_x, Sigma_w, Sigma_v, theta_g, theta_F] = psi_0(K.w,K.v, K.x, thetaF, Q_K, K.x0); 
+%save('psi_0.mat','a_x', 'Sigma_x', 'Sigma_w', 'Sigma_v','theta_g','theta_F'); 
+%%% END: Tillagt av CJ för \psi_0 %%%
+
 %% Figure
 
 figure(1);
