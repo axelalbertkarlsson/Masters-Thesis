@@ -65,6 +65,27 @@ end
 %save('psi_0.mat','a_x', 'Sigma_x', 'Sigma_w', 'Sigma_v','theta_g','theta_F'); 
 %%% END: Tillagt av CJ för \psi_0 %%%
 
+%%% Start: Tillagt av CJ för data som behövs i EKF %%%
+% OIS contracts, EONIA, meeting days
+    zAll = priceAll;%Includes EONIA, the first element in every cell is the EONIA rate /CJ
+    %pl, is not necessary (pl.at)
+    %save('observedData.mat', 'zAll')
+% Things for o, like intE, PCA etc
+
+    % C - meeting days
+    % Q_K
+
+% Kalman filter: I^z_t, G_t, D_t, A_t, B_t
+    I_z = K.Iz;
+    G_t = K.G;
+    D_t = K.D;
+    A_t = K.A;
+    B_t = K.B;
+    %save('timeDependantVariables.mat', 'I^z_t', 'G_t', 'D_t', 'A_t', 'B_t')
+
+
+%%% END: Tillagt av CJ för data som behövs i EKF %%%
+
 %% Figure
 
 figure(1);
