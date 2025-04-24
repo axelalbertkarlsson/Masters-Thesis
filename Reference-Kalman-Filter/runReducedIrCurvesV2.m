@@ -68,22 +68,23 @@ end
 %%% Start: Tillagt av CJ för data som behövs i EKF %%%
 % OIS contracts, EONIA, meeting days
     zAll = priceAll;%Includes EONIA, the first element in every cell is the EONIA rate /CJ
-    %pl, is not necessary (pl.at)
-    %save('observedData.mat', 'zAll')
-% Things for o, like intE, PCA etc
-
+    ecbRatechangeDates =cbEffectiveDates; % Dates when the ECB's changed rates are implemented (use datestr() to see the date)/CJ
+    % pl, is not necessary (pl.at) /CJ
+    %save('observedData.mat', 'zAll', 'ecbRatechangeDates');
+% Pricing for with things like o, like intE, PCA etc
+    idContracts = atAll; % atAll has the primary id of contracts corresponding with priceAll (closely linked to indInstrAll) \CJ
     % C - meeting days
-    % Q_K
-
+    % Behöver inte ef, pga använda bara på Jörgen's \Sigma_w /CJ
+    % Ef behövs för att det är vårt Q_K som vi har i \psi_0 /CJ
+    %save('pricingData.mat', 'idContracts');
 % Kalman filter: I^z_t, G_t, D_t, A_t, B_t
     I_z = K.Iz;
     G_t = K.G;
     D_t = K.D;
     A_t = K.A;
     B_t = K.B;
-    %save('timeDependantVariables.mat', 'I^z_t', 'G_t', 'D_t', 'A_t', 'B_t')
-
-
+    f_t = fH; % Dialy discretized forward curve, used to derive x_{t,p} by f_t*Q_k /CJ
+    %save('timeDependantVariables.mat', 'I^z_t', 'G_t', 'D_t','A_t','B_t','f_t'); 
 %%% END: Tillagt av CJ för data som behövs i EKF %%%
 
 %% Figure
