@@ -1,4 +1,5 @@
-measurementPath = 'Reference-Kalman-Filter\measurement';
+clear;
+measurementPath = 'measurement';
 
 addpath(measurementPath)
 
@@ -89,8 +90,9 @@ usedInstr = false(1, length(indAll));
 maturityAll = cell(length(times), 1);
 
 %%& Start: Tillagd av CJ för att ta ut relevant data %%%
-%...
+instrAll = cell(length(times), 1);
 %%& End: Tillagd av CJ för att ta ut relevant data %%%
+
 
 for k=1:length(times)
 
@@ -168,8 +170,6 @@ for k=1:length(times)
 
   nExtrapolate = tradeDate-firstDate;
   E = [repmat(Ef(1,:),nExtrapolate, 1) ; Ef];
-  Q_K = E;
-
   datesStep = cbEffectiveDates(cbEffectiveDates > tradeDate);
   datesStep = datesStep(1:nSteps);
   
@@ -211,10 +211,11 @@ for k=1:length(times)
   tcAll{k} = tc;
   oAll{k} = o;
   oIndAll{k} = oInd;
-  
+
   %%& Start: Tillagd av CJ för att ta ut relevant data %%%
-  %...
+  instrAll{k} = instr;
   %%& End: Tillagd av CJ för att ta ut relevant data %%%
+
   lastDate = mexPortfolio('lastDate', instrID);
  
   firstDates(k) = firstDate;
@@ -222,4 +223,4 @@ for k=1:length(times)
   lastDates(k) = lastDate;
   
 end
-clearvars -except maturityAll priceAll atAll tcAll oAll oIndAll firstDates tradeDates lastDates Ef usedInstr nSteps ef times fH indInstrAll usedInstr kx pl cbEffectiveDates Q_K
+clearvars -except maturityAll priceAll atAll tcAll oAll oIndAll instrAll firstDates tradeDates Ef ef nSteps times fH indInstrAll usedInstr kx pl cbEffectiveDates
