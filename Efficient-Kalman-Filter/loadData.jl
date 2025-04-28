@@ -8,67 +8,106 @@ export KalmanData, load_all_data, run
 # === Internal Structs ===
 
 struct ObservedData
-    ecbRatechangeDates
-    zAll
+    ecbRatechangeDates   # Vector{Float64} - ECB rate change dates
+    zAll                 # Matrix{Float64} - Observed data over time
 end
 
 struct PricingData
-    firstDates
-    idContracts
-    infoInstrAll
-    oIndAll
-    tcAll
-    tradeDates
+    firstDates           # Vector{Float64} - Contract start dates
+    idContracts          # Vector{Any}     - Contract IDs (cell array)
+    infoInstrAll         # Vector{Any}     - Instrument info
+    oIndAll              # Vector{Any}     - Original indices
+    tcAll                # Vector{Any}     - Transaction costs/types
+    tradeDates           # Vector{Float64} - Trade dates
 end
 
 struct Psi0Data
-    Sigma_v
-    Sigma_w
-    Sigma_x
-    a_x
-    theta_F
-    theta_g
+    Sigma_v              # Matrix{Float64} (28x28) - Measurement noise covariance
+    Sigma_w              # Matrix{Float64} (50x50) - Process noise covariance
+    Sigma_x              # Matrix{Float64} (50x50) - Initial state covariance
+    a_x                  # Vector{Float64} (50x1)  - Initial state mean
+    theta_F              # Vector{Float64} (50x1)  - F matrix parameters
+    theta_g              # Matrix{Float64} (3661x6) - g matrix parameters
 end
 
 struct RefKFVariables
-    A_t
-    B_t
-    D_t
-    G_t
-    I_z_t
-    f_t
-    n_c
-    n_p
-    n_s
-    n_t
-    n_u
-    n_x
-    n_z_t
+    A_t                  # Vector{Matrix} - Transition matrices A_t[time][i,j]
+    B_t                  # Vector{Matrix} - System matrices B_t[time][i,j]
+    D_t                  # Vector{Matrix} - System matrices D_t[time][i,j]
+    G_t                  # Vector{Matrix} - Measurement matrices G_t[time][i,j]
+    I_z_t                # Vector{Matrix} - Mapping matrices I_z_t[time][i,j]
+    f_t                  # Matrix{Float64} (5030x3670) - Factors over time
+    n_c                  # Int - Number of country factors
+    n_p                  # Int - Number of pricing factors
+    n_s                  # Int - Number of state shocks
+    n_t                  # Int - Number of time steps
+    n_u                  # Int - Number of measurement shocks
+    n_x                  # Int - State vector dimension
+    n_z_t                # Vector{Float64} - Number of observed variables at each time
 end
 
 # === Final Struct with all variables grouped ===
 
+"""
+    KalmanData
+
+Holds all loaded data from the Efficient Kalman Filter project.
+
+Fields:
+- `ecbRatechangeDates::Vector{Float64}` — ECB rate change dates
+- `zAll::Matrix{Float64}` — Observed data over time
+- `firstDates::Vector{Float64}` — Contract start dates
+- `idContracts::Vector{Any}` — Contract IDs
+- `infoInstrAll::Vector{Any}` — Instrument info
+- `oIndAll::Vector{Any}` — Original indices
+- `tcAll::Vector{Any}` — Transaction costs/types
+- `tradeDates::Vector{Float64}` — Trade dates
+- `Sigma_v::Matrix{Float64}` — Measurement noise covariance (28x28)
+- `Sigma_w::Matrix{Float64}` — Process noise covariance (50x50)
+- `Sigma_x::Matrix{Float64}` — Initial state covariance (50x50)
+- `a_x::Vector{Float64}` — Initial state mean (50x1)
+- `theta_F::Vector{Float64}` — F matrix parameters (50x1)
+- `theta_g::Matrix{Float64}` — g matrix parameters (3661x6)
+- `A_t::Vector{Matrix}` — Transition matrices over time
+- `B_t::Vector{Matrix}` — System matrices over time
+- `D_t::Vector{Matrix}` — System matrices over time
+- `G_t::Vector{Matrix}` — Measurement matrices over time
+- `I_z_t::Vector{Matrix}` — Mapping matrices over time
+- `f_t::Matrix{Float64}` — Factors over time (5030x3670)
+- `n_c::Int` — Number of country factors
+- `n_p::Int` — Number of pricing factors
+- `n_s::Int` — Number of state shocks
+- `n_t::Int` — Number of time steps
+- `n_u::Int` — Number of measurement shocks
+- `n_x::Int` — State vector dimension
+- `n_z_t::Vector{Float64}` — Number of observed variables at each time
+"""
 struct KalmanData
     ecbRatechangeDates
     zAll
+
     firstDates
     idContracts
     infoInstrAll
     oIndAll
     tcAll
     tradeDates
+
     Sigma_v
     Sigma_w
     Sigma_x
     a_x
     theta_F
     theta_g
+
     A_t
     B_t
     D_t
     G_t
     I_z_t
+
     f_t
+
     n_c
     n_p
     n_s
@@ -80,6 +119,12 @@ end
 
 # === Function to load all .mat files ===
 
+"""
+    load_all_data(data_folder::String)
+
+Reads observedData.mat, pricingData.mat, psi_0.mat, refKFVariables.mat
+and returns (ObservedData, PricingData, Psi0Data, RefKFVariables).
+"""
 function load_all_data(data_folder::String)
     vars = Dict{Symbol, Any}()
     files = [
@@ -105,32 +150,42 @@ function load_all_data(data_folder::String)
     )
 end
 
-# === Final function: returns KalmanData ===
+# === Final function: returns KalmanData ready to use ===
 
+"""
+    run(data_folder::String="Efficient-Kalman-Filter/Data")
+
+Loads the full KalmanData struct ready for use.
+"""
 function run(data_folder::String = "Efficient-Kalman-Filter/Data")
     observedData, pricingData, psi0Data, refkfData = load_all_data(data_folder)
 
     return KalmanData(
         observedData.ecbRatechangeDates,
         observedData.zAll,
+
         pricingData.firstDates,
         pricingData.idContracts,
         pricingData.infoInstrAll,
         pricingData.oIndAll,
         pricingData.tcAll,
         pricingData.tradeDates,
+
         psi0Data.Sigma_v,
         psi0Data.Sigma_w,
         psi0Data.Sigma_x,
         psi0Data.a_x,
         psi0Data.theta_F,
         psi0Data.theta_g,
+
         refkfData.A_t,
         refkfData.B_t,
         refkfData.D_t,
         refkfData.G_t,
         refkfData.I_z_t,
+
         refkfData.f_t,
+
         refkfData.n_c,
         refkfData.n_p,
         refkfData.n_s,
