@@ -1,7 +1,7 @@
 module pricingFunctions
 
 # === Exported functions ===
-export calcO
+export calcO, taylorApprox
 
 # === Functions ===
 
@@ -42,5 +42,41 @@ function calcO(firstDate, tradeDate, theta_g, ecbRatechangeDates, n_c, n_z_t, T0
 
     return o
 end
+
+"""
+taylorApprox(o, oInd, tc, I_z, n_c)
+
+Computes the first-order Taylor approximation (g, G) for a set of instruments.
+
+"""
+function taylorApprox(o, oInd, tc, x, I_z, n_z_t)
+    n_z_t = Int(n_z_t)
+    oInd = Int.(oInd)
+
+    g = zeros(n_z_t)
+    G = zeros(n_z_t, size(x, 1))
+
+    for j in 1:n_z_t
+        ind = oInd[j]:(oInd[j+1]-1)
+        if j == 1
+            eox = exp.(-o[ind, :] * x)
+            g[j] = (eox[1] - 1) / tc[ind][1]
+            G[j, :] = (-eox[1]) .* o[ind, :] ./ tc[ind][1]
+
+        else
+            eox = exp.(o[ind, :] * x)
+            den = sum(tc[ind[2:end]] .* eox[2:end])
+            g[j] = (eox[1] - eox[end]) / den
+            G[j, :] = (eox[1] .* o[ind[1], :] .- eox[end] .* o[ind[end], :]) ./ den
+            #sum_part = sum(tc[ind[2:end]] .* eox[2:end])
+            weighted_sum = sum((tc[ind[2:end]] .* eox[2:end]) .* o[ind[2:end], :], dims=1)
+            G[j, :] .-= ((eox[1] - eox[end]) / den^2) .* vec(weighted_sum)
+        end
+    end
+    H = [G I_z]
+    u = g - G*x
+    return H, u, g, G
+end
+
 
 end # module

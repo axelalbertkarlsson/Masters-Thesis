@@ -1,4 +1,5 @@
 using Revise
+
 include("loadData.jl")
 include("pricingFunctions.jl")
 
@@ -24,3 +25,5 @@ for t in 1:Int(data.n_t)
         data.TAll[t]
     )
 end
+
+#H, u, g, G = pricingFunctions.taylorApprox(oAll[1], data.oIndAll[1], data.tcAll[1], ones(Int(data.n_s),1), data.I_z_t[1], data.n_z_t[1]);
