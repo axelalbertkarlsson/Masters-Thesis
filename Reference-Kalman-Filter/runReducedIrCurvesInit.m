@@ -189,7 +189,7 @@ for k=1:length(times)
   oInd(1) = 1;
 
   %%& Start: Tillagd av CJ för att ta ut relevant data %%%
-  T_k = zeros(length(instrID),1);
+  T_k = zeros(10,length(instrID));
   T0_k = zeros(length(instrID),1);
   disp(k);
   %%& End: Tillagd av CJ för att ta ut relevant data %%%
@@ -213,12 +213,9 @@ for k=1:length(times)
     price(j) = instr.data{j}.price(3);
     lastInterestDatesHvec(jj) = mexPortfolio('lastDate', instrID(j));
     %%& Start: Tillagd av CJ för att ta ut relevant data %%%
-    disp(j);
-    if j==17
-        disp(T_k);
-        disp(size(T));
+    for i=1:size(T,1)
+        T_k(i,j) = T(i,1);
     end
-    T_k(j) = T;
     T0_k(j) = T0;
     %%& End: Tillagd av CJ för att ta ut relevant data %%%
   end
