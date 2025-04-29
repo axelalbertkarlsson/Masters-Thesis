@@ -90,7 +90,8 @@ usedInstr = false(1, length(indAll));
 maturityAll = cell(length(times), 1);
 
 %%& Start: Tillagd av CJ för att ta ut relevant data %%%
-instrAll = cell(length(times), 1);
+TAll = cell(length(times), 1);
+T0All = cell(length(times), 1);
 %%& End: Tillagd av CJ för att ta ut relevant data %%%
 
 
@@ -186,6 +187,13 @@ for k=1:length(times)
   price = zeros(length(instrID),1);
   oInd = zeros(length(instrID)+1,1);
   oInd(1) = 1;
+
+  %%& Start: Tillagd av CJ för att ta ut relevant data %%%
+  T_k = zeros(10,length(instrID));
+  T0_k = zeros(length(instrID),1);
+  disp(k);
+  %%& End: Tillagd av CJ för att ta ut relevant data %%%
+
   for j=1:length(instrID)
     jj = indInstr(j);
     usedInstr(jj) = true;
@@ -204,7 +212,14 @@ for k=1:length(times)
     oInd(j+1) = size(o,1)+1;
     price(j) = instr.data{j}.price(3);
     lastInterestDatesHvec(jj) = mexPortfolio('lastDate', instrID(j));
+    %%& Start: Tillagd av CJ för att ta ut relevant data %%%
+    for i=1:size(T,1)
+        T_k(i,j) = T(i,1);
+    end
+    T0_k(j) = T0;
+    %%& End: Tillagd av CJ för att ta ut relevant data %%%
   end
+  
   maturityAll{k} = maturity;
   priceAll{k} = price;
   atAll{k} = assetTypeAll(indInstr);
@@ -213,7 +228,8 @@ for k=1:length(times)
   oIndAll{k} = oInd;
 
   %%& Start: Tillagd av CJ för att ta ut relevant data %%%
-  instrAll{k} = instr;
+  TAll{k} = T_k;
+  T0All{k} = T0_k;
   %%& End: Tillagd av CJ för att ta ut relevant data %%%
 
   lastDate = mexPortfolio('lastDate', instrID);
@@ -223,4 +239,4 @@ for k=1:length(times)
   lastDates(k) = lastDate;
   
 end
-clearvars -except maturityAll priceAll atAll tcAll oAll oIndAll instrAll firstDates tradeDates Ef ef nSteps times fH indInstrAll usedInstr kx pl cbEffectiveDates
+clearvars -except maturityAll priceAll atAll tcAll oAll oIndAll TAll T0All firstDates tradeDates Ef ef nSteps times fH indInstrAll usedInstr kx pl cbEffectiveDates

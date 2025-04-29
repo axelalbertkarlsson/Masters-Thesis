@@ -15,7 +15,8 @@ end
 struct PricingData
     firstDates           # Vector{Float64} - Contract start dates
     idContracts          # Vector{Any}     - Contract IDs (cell array)
-    infoInstrAll         # Vector{Any}     - Instrument info
+    TAll                 # Vector{Matrix}  - New: TAll matrices (5030x1, each 10x28)
+    T0All                # Vector{Matrix}  - New: T0All vectors (5030x1, each 28x1)
     oIndAll              # Vector{Any}     - Original indices
     tcAll                # Vector{Any}     - Transaction costs/types
     tradeDates           # Vector{Float64} - Trade dates
@@ -58,7 +59,8 @@ Fields:
 - `zAll::Matrix{Float64}` — Observed data over time
 - `firstDates::Vector{Float64}` — Contract start dates
 - `idContracts::Vector{Any}` — Contract IDs
-- `infoInstrAll::Vector{Any}` — Instrument info
+- `TAll::Vector{Matrix}` — T matrices (each 10x28)
+- `T0All::Vector{Matrix}` — T0 vectors (each 28x1)
 - `oIndAll::Vector{Any}` — Original indices
 - `tcAll::Vector{Any}` — Transaction costs/types
 - `tradeDates::Vector{Float64}` — Trade dates
@@ -88,7 +90,8 @@ struct KalmanData
 
     firstDates
     idContracts
-    infoInstrAll
+    TAll
+    T0All
     oIndAll
     tcAll
     tradeDates
@@ -143,7 +146,7 @@ function load_all_data(data_folder::String)
     end
     return (
         ObservedData(vars[:ecbRatechangeDates], vars[:zAll]),
-        PricingData(vars[:firstDates], vars[:idContracts], vars[:infoInstrAll], vars[:oIndAll], vars[:tcAll], vars[:tradeDates]),
+        PricingData(vars[:firstDates], vars[:idContracts], vars[:TAll], vars[:T0All], vars[:oIndAll], vars[:tcAll], vars[:tradeDates]),
         Psi0Data(vars[:Sigma_v], vars[:Sigma_w], vars[:Sigma_x], vars[:a_x], vars[:theta_F], vars[:theta_g]),
         RefKFVariables(vars[:A_t], vars[:B_t], vars[:D_t], vars[:G_t], vars[:I_z_t], vars[:f_t],
                        vars[:n_c], vars[:n_p], vars[:n_s], vars[:n_t], vars[:n_u], vars[:n_x], vars[:n_z_t])
@@ -151,12 +154,6 @@ function load_all_data(data_folder::String)
 end
 
 # === Final function: returns KalmanData ready to use ===
-
-"""
-    run(data_folder::String="Efficient-Kalman-Filter/Data")
-
-Loads the full KalmanData struct ready for use.
-"""
 function run(data_folder::String = "Efficient-Kalman-Filter/Data")
     observedData, pricingData, psi0Data, refkfData = load_all_data(data_folder)
 
@@ -166,7 +163,8 @@ function run(data_folder::String = "Efficient-Kalman-Filter/Data")
 
         pricingData.firstDates,
         pricingData.idContracts,
-        pricingData.infoInstrAll,
+        pricingData.TAll,
+        pricingData.T0All,
         pricingData.oIndAll,
         pricingData.tcAll,
         pricingData.tradeDates,
