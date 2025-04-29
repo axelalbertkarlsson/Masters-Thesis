@@ -31,9 +31,14 @@ for i = 1:n
     end
 end
 
+% Extract elapsed time
+elapsed = double(res{"elapsed"});
+
 % Display result
 disp('Losses:');
 disp(losses);
 
 disp('Gradients:');
 disp(grads);
+
+disp(['Elapsed time in Julia (seconds): ', num2str(elapsed)]);
