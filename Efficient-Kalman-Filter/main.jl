@@ -1,9 +1,26 @@
 using Revise
-using .loadData
+include("loadData.jl")
+include("pricingFunctions.jl")
 
-# This will now work without any error
+using .loadData
+using .pricingFunctions
+
+# Load data
 data = loadData.run()
 
-println(data.zAll[1,1])
-println(data.G_t[1][1,2])
-println(data.idContracts[1])
+# Initialize 
+oAll = [zeros(103, 22) for _ in 1:data.n_t]
+
+# Calculate oAll
+for t in 1:Int(data.n_t)
+    oAll[t] = pricingFunctions.calcO(
+        data.firstDates[t],
+        data.tradeDates[t],
+        data.theta_g,
+        data.ecbRatechangeDates,
+        data.n_c,
+        data.n_z_t[t],
+        data.T0All[t],
+        data.TAll[t]
+    )
+end
