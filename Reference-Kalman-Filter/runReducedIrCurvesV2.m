@@ -74,11 +74,11 @@ end
     idContracts = atAll; % atAll has the primary id of contracts corresponding with priceAll (closely linked to indInstrAll) \CJ
     % firstDates: Needed to calculate the o (use datestr() to see the date)/CJ
     % tradeDates: Needed to calculate the o (use datestr() to see the date)/CJ
-    infoInstrAll = instrAll; % Needed to determine maturities and determine different types of instruments when deciding o /CJ
+    % TAll & T0All :  Needed to determine maturities and determine different types of instruments when deciding o /CJ
     % oIndAll: Vet inte exakt hur den tas fram men behövs för o och särskilt taylorInstrPC /CJ
     % tcAll: Behövs för o, taylorInstrPC
     % Ef behövs för att det är vårt Q_K som vi har i \psi_0 /CJ
-    %save('pricingData.mat', 'idContracts', 'firstDates', 'tradeDates','infoInstrAll', 'oIndAll', 'tcAll');
+    %save('pricingData.mat', 'idContracts', 'firstDates', 'tradeDates','TAll', 'T0All', 'oIndAll', 'tcAll');
 % Kalman filter: I^z_t, G_t, D_t, A_t, B_t
     I_z_t = cellfun(@full, K.Iz, 'UniformOutput',false);
     G_t = cellfun(@full, K.G, 'UniformOutput',false);
