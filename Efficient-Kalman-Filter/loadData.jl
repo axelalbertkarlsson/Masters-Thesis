@@ -122,6 +122,12 @@ end
 
 # === Function to load all .mat files ===
 
+"""
+    load_all_data(data_folder::String)
+
+Reads observedData.mat, pricingData.mat, psi_0.mat, refKFVariables.mat
+and returns (ObservedData, PricingData, Psi0Data, RefKFVariables).
+"""
 function load_all_data(data_folder::String)
     vars = Dict{Symbol, Any}()
     files = [
@@ -148,7 +154,6 @@ function load_all_data(data_folder::String)
 end
 
 # === Final function: returns KalmanData ready to use ===
-
 function run(data_folder::String = "Efficient-Kalman-Filter/Data")
     observedData, pricingData, psi0Data, refkfData = load_all_data(data_folder)
 
