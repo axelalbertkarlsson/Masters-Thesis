@@ -2,7 +2,9 @@ using Revise
 
 include("loadData.jl")
 include("pricingFunctions.jl")
+include("newtonMethod.jl")
 
+using .newtonMethod
 using .loadData
 using .pricingFunctions
 
@@ -26,4 +28,13 @@ for t in 1:Int(data.n_t)
     )
 end
 
-#H, u, g, G = pricingFunctions.taylorApprox(oAll[1], data.oIndAll[1], data.tcAll[1], ones(Int(data.n_s),1), data.I_z_t[1], data.n_z_t[1]);
+
+function dummy_nll(ψ)
+    x, y = ψ
+    return x^2 + 2y^2
+end
+
+ψ₀ = [4.0, -5.0]
+ψ_opt = newtonMethod.newtonOptimize(dummy_nll, ψ₀; verbose=true)
+
+println("\nOptimized ψ = ", ψ_opt)
