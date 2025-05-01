@@ -11,18 +11,21 @@ export calcO, taylorApprox
 Calculates the o matrix used in pricing based on extrapolated steps.
 """
 function calcO(firstDate, tradeDate, theta_g, ecbRatechangeDates, n_c, n_z_t, T0, T)
-    nExtrapolate = Int(tradeDate - firstDate)
+    nExtrapolate = Int(tradeDate) - Int(firstDate)
     E = [repeat(theta_g[1, :]', nExtrapolate, 1); theta_g]
 
-    datesStep = ecbRatechangeDates[ecbRatechangeDates .> tradeDate]
-    datesStep = datesStep[1:Int(n_c)]
+    n_steps = 16 # Number of steps to model cuts/hikes from the central banks
 
-    Es = zeros(size(E, 1), Int(n_c))
-    for i in 1:Int(n_c)
-        Es[Int(datesStep[i] - tradeDate + 1):end, i] .= 1
+    datesStep = ecbRatechangeDates[ecbRatechangeDates .> tradeDate]
+    datesStep = datesStep[1:Int(n_steps)]
+
+    Es = zeros(size(E, 1), Int(n_steps))
+    for i in 1:Int(n_steps)
+        Es[(Int(datesStep[i]) - Int(tradeDate) + 1):end, i] .= 1
     end
 
     E = [E Es]
+
     intE = [zeros(1, size(E, 2)); cumsum(E, dims=1)] / 365
 
     o = zeros(0, size(intE, 2))  # initialize 0 rows but right number of columns
@@ -40,7 +43,7 @@ function calcO(firstDate, tradeDate, theta_g, ecbRatechangeDates, n_c, n_z_t, T0
         end
     end
 
-    return o
+    return o, E
 end
 
 """

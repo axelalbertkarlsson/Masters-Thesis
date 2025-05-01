@@ -10,6 +10,7 @@ export KalmanData, load_all_data, run
 struct ObservedData
     ecbRatechangeDates   # Vector{Float64} - ECB rate change dates
     zAll                 # Matrix{Float64} - Observed data over time
+    times                # Vector{Float64} - Dates
 end
 
 struct PricingData
@@ -57,6 +58,7 @@ Holds all loaded data from the Efficient Kalman Filter project.
 Fields:
 - `ecbRatechangeDates::Vector{Float64}` — ECB rate change dates
 - `zAll::Matrix{Float64}` — Observed data over time
+- `times::Vector{Float64}` — Observed data over time
 - `firstDates::Vector{Float64}` — Contract start dates
 - `idContracts::Vector{Any}` — Contract IDs
 - `TAll::Vector{Matrix}` — T matrices (each 10x28)
@@ -87,6 +89,7 @@ Fields:
 struct KalmanData
     ecbRatechangeDates
     zAll
+    times
 
     firstDates
     idContracts
@@ -145,7 +148,7 @@ function load_all_data(data_folder::String)
         end
     end
     return (
-        ObservedData(vars[:ecbRatechangeDates], vars[:zAll]),
+        ObservedData(vars[:ecbRatechangeDates], vars[:zAll], vars[:times]),
         PricingData(vars[:firstDates], vars[:idContracts], vars[:TAll], vars[:T0All], vars[:oIndAll], vars[:tcAll], vars[:tradeDates]),
         Psi0Data(vars[:Sigma_v], vars[:Sigma_w], vars[:Sigma_x], vars[:a_x], vars[:theta_F], vars[:theta_g]),
         RefKFVariables(vars[:A_t], vars[:B_t], vars[:D_t], vars[:G_t], vars[:I_z_t], vars[:f_t],
@@ -160,6 +163,7 @@ function run(data_folder::String = "Efficient-Kalman-Filter/Data")
     return KalmanData(
         observedData.ecbRatechangeDates,
         observedData.zAll,
+        observedData.times,
 
         pricingData.firstDates,
         pricingData.idContracts,
