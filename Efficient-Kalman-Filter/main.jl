@@ -5,9 +5,9 @@ include("pricingFunctions.jl")
 include("newtonMethod.jl")
 include("outputData.jl")
 include("plots.jl")
-include("simpleEKF.jl")
+include("EKF.jl")
 
-using .simpleEKF
+using .EKF
 using .plots
 using .outputData
 using .newtonMethod
@@ -24,7 +24,7 @@ data_insample = split.insample
 data_outsample = split.outsample
 
 # Run Filter
-x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll = simpleEKF.kalman_filter_smoother_lag1(
+x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll = EKF.kalman_filter_smoother_lag1(
     data_insample.zAll,
     data_insample.oIndAll,
     data_insample.tcAll,
@@ -55,7 +55,7 @@ x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll = simpleEKF.kalman_filter_
 )
 
 # Calculate Forward Rates and Repricing
-fAll, priceAll = outputData.calculateRateAndRepricing(
+fAll, priceAll, innovationAll = outputData.calculateRateAndRepricing(
     EAll,
     data_insample.zAll,
     data_insample.I_z_t,
@@ -66,7 +66,8 @@ fAll, priceAll = outputData.calculateRateAndRepricing(
     data_insample.theta_g,
     Int.(data_insample.n_z_t),
     Int(data_insample.n_t),
-    Int(data_insample.n_s)
+    Int(data_insample.n_s),
+    Int(data_insample.n_u),
 )
 
 # Plot Forward Rate Curve (Should be done in Matlab instead)

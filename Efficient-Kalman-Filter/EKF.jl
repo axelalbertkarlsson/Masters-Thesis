@@ -1,5 +1,5 @@
 # newtonMethodRev.jl
-module simpleEKF
+module EKF
 
 using LinearAlgebra
 
@@ -21,14 +21,18 @@ function kalman_filter_smoother_lag1(zAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p,
     P_filt = [zeros(n_x,n_x) for _ in 1:T]
     K      = [zeros(n_x,n_x) for _ in 1:T]
 
-    oAll = [zeros(103, 22) for _ in 1:n_t]
-    EAll = [zeros(3661, 6) for _ in 1:n_t]
+    oAll = [zeros(103, 22) for _ in 1:T]
+    EAll = [zeros(3661, 6) for _ in 1:T]
 
     x_pred[1] = AAll[1]*Diagonal(θF)*BAll[1]*a0
     P_pred[1] = AAll[1]*Diagonal(θF)*BAll[1]*Σx*(AAll[1]*Diagonal(θF)*BAll[1])' + DAll[1]*Σw*DAll[1]'
 
     # Kalman Filter
     for t = 1:T
+        if t > 1
+            x_pred[t] = AAll[t]*Diagonal(θF)*BAll[t] * x_filt[t-1]
+            P_pred[t] = AAll[t]*Diagonal(θF)*BAll[t] * P_filt[t-1] * (AAll[t]*Diagonal(θF)*BAll[t])' + DAll[t]*Σw*DAll[t]'
+        end
         oAll[t], EAll[t] = pricingFunctions.calcO(
             firstDates[t],
             tradeDates[t],
@@ -39,10 +43,6 @@ function kalman_filter_smoother_lag1(zAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p,
             T0All[t],
             TAll[t]
         )
-        if t > 1
-            x_pred[t] = AAll[t]*Diagonal(θF)*BAll[t] * x_filt[t-1]
-            P_pred[t] = AAll[t]*Diagonal(θF)*BAll[t] * P_filt[t-1] * (AAll[t]*Diagonal(θF)*BAll[t])' + DAll[t]*Σw*DAll[t]'
-        end
         H_t, u_t, g, Gradient = pricingFunctions.taylorApprox(oAll[t], oIndAll[t], tcAll[t], x_pred[t][1:n_s], I_z_t[t], n_z_t[t])
         R_t = GAll[t]*Σv*GAll[t]'
         K[t] = P_pred[t]*H_t' * inv(H_t*P_pred[t]*H_t' + R_t)
