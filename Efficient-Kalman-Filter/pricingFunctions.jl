@@ -12,10 +12,15 @@ Calculates the o matrix used in pricing based on extrapolated steps.
 """
 function calcO(firstDate, tradeDate, theta_g, ecbRatechangeDates, n_c, n_z_t, T0, T)
     nExtrapolate = Int(tradeDate) - Int(firstDate)
-    E = [repeat(theta_g[1, :]', nExtrapolate, 1); theta_g]
 
-    n_steps = 16 # Number of steps to model cuts/hikes from the central banks
+    # vertical stack via cat instead of [ ... ; ... ]
+    E = cat(
+      repeat(theta_g[1, :]', nExtrapolate, 1),
+      theta_g;
+      dims=1
+    )
 
+    n_steps = 16
     datesStep = ecbRatechangeDates[ecbRatechangeDates .> tradeDate]
     datesStep = datesStep[1:Int(n_steps)]
 
@@ -24,11 +29,17 @@ function calcO(firstDate, tradeDate, theta_g, ecbRatechangeDates, n_c, n_z_t, T0
         Es[(Int(datesStep[i]) - Int(tradeDate) + 1):end, i] .= 1
     end
 
-    E = [E Es]
+    # horizontal concat is safe, you can keep [E Es] or do:
+    E = cat(E, Es; dims=2)
 
-    intE = [zeros(1, size(E, 2)); cumsum(E, dims=1)] / 365
+    # again vertical stack via cat
+    intE = cat(
+      zeros(1, size(E, 2)),
+      cumsum(E, dims=1);
+      dims=1
+    ) / 365
 
-    o = zeros(0, size(intE, 2))  # initialize 0 rows but right number of columns
+    o = zeros(0, size(intE, 2))
 
     for j in 1:Int(n_z_t)
         col = T[:, j]
@@ -36,10 +47,11 @@ function calcO(firstDate, tradeDate, theta_g, ecbRatechangeDates, n_c, n_z_t, T0
         T_indices = Int.(T_nonzero_values)
 
         if j == 1
-            o = [o; -intE[T_indices, :]]
+            o = cat(o, -intE[T_indices, :]; dims=1)
         else
             row1 = reshape(-intE[Int(T0[j, 1]), :], 1, :)
-            o = [o; row1; -intE[T_indices, :]]
+            o = cat(o, row1; dims=1)
+            o = cat(o, -intE[T_indices, :]; dims=1)
         end
     end
 
@@ -56,8 +68,8 @@ function taylorApprox(o, oInd, tc, x, I_z, n_z_t)
     n_z_t = Int(n_z_t)
     oInd = Int.(oInd)
 
-    g = zeros(n_z_t)
-    G = zeros(n_z_t, size(x, 1))
+    g = Vector{eltype(x)}(undef, n_z_t)
+    G = Matrix{eltype(x)}(undef, n_z_t, size(x, 1))
 
     for j in 1:n_z_t
         ind = oInd[j]:(oInd[j+1]-1)
