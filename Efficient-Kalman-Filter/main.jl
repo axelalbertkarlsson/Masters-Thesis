@@ -1,11 +1,12 @@
 using Revise, LinearAlgebra, Plots
 
-include("loadData.jl")
-include("pricingFunctions.jl")
-include("newtonMethod.jl")
-include("outputData.jl")
-include("plots.jl")
-include("EKF.jl")
+# Only include files if the module hasn't been defined yet
+if !isdefined(Main, :loadData);        include("loadData.jl");        end
+if !isdefined(Main, :pricingFunctions);include("pricingFunctions.jl");end
+if !isdefined(Main, :newtonMethod);    include("newtonMethod.jl");    end
+if !isdefined(Main, :outputData);      include("outputData.jl");      end
+if !isdefined(Main, :plots);           include("plots.jl");           end
+if !isdefined(Main, :EKF);             include("EKF.jl");             end
 
 using .EKF
 using .plots
@@ -13,6 +14,9 @@ using .outputData
 using .newtonMethod
 using .loadData
 using .pricingFunctions
+
+# Clears terminal
+clear() = print("\e[2J\e[H")
 
 # Load full data
 data = loadData.run()
@@ -68,7 +72,7 @@ fAll, priceAll, innovationAll = outputData.calculateRateAndRepricing(
     Int(data_insample.n_t),
     Int(data_insample.n_s),
     Int(data_insample.n_u),
-)
+);
 
 # Plot Forward Rate Curve (Should be done in Matlab instead)
-plots.plot3DCurve(data_insample.times, fAll)
+#plots.plot3DCurve(data_insample.times, fAll)

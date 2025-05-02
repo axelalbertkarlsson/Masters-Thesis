@@ -36,7 +36,7 @@ function calculateRateAndRepricing(EAll, zAll, I_z_t, xAll, oAll, oIndAll, tcAll
         innovationAll[t] = zAll[t] - g #Maybe zAll[t] - H_t - u_t
     end
 
-    return fAll, priceAll, innovationAll
+    return fAll, priceAll, innovationAll;
 end
 
 end # module
