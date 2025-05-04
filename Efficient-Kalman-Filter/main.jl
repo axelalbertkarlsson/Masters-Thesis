@@ -1,110 +1,197 @@
-using Revise, LinearAlgebra, Plots
+using Revise, LinearAlgebra, Plots, DataFrames, CSV, Statistics
 
 include("loadData.jl")
 include("pricingFunctions.jl")
 include("newtonMethod.jl")
 include("outputData.jl")
 include("plots.jl")
+include("EKF.jl")
 
+using .EKF
 using .plots
 using .outputData
 using .newtonMethod
 using .loadData
 using .pricingFunctions
 
-# Load data
+# Clears terminal
+clear() = print("\e[2J\e[H")
+
+# Load full data
 data = loadData.run()
 
-function kalman_filter_smoother_lag1(zAll, oAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p, n_s, n_t, n_u, n_x, n_z_t, AAll, BAll, DAll, GAll, Σw, Σv, a0, Σx, θF, θg)
-    T = n_t;
+# Split data: p% in-sample, (1-p)% out-of-sample
+p = 0.1
+split = loadData.split_data(data, p)
+data_insample = split.insample
+data_outsample = split.outsample
 
-    # Preallocate
-    x_pred = [zeros(n_x) for _ in 1:T]
-    P_pred = [zeros(n_x,n_x) for _ in 1:T]
-    x_filt = [zeros(n_x) for _ in 1:T]
-    P_filt = [zeros(n_x,n_x) for _ in 1:T]
-    K      = [zeros(n_x,n_x) for _ in 1:T]
+# Run Filter
+x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll = EKF.kalman_filter_smoother_lag1(
+    data_insample.zAll,
+    data_insample.oIndAll,
+    data_insample.tcAll,
+    data_insample.I_z_t,
+    data_insample.f_t,
+    Int(data_insample.n_c),
+    Int(data_insample.n_p),
+    Int(data_insample.n_s),
+    Int(data_insample.n_t),
+    Int(data_insample.n_u),
+    Int(data_insample.n_x),
+    Int.(data_insample.n_z_t),
+    data_insample.A_t,
+    data_insample.B_t,
+    data_insample.D_t,
+    data_insample.G_t,
+    data_insample.Sigma_w,
+    data_insample.Sigma_v,
+    vec(data_insample.a_x),
+    data_insample.Sigma_x,
+    vec(data_insample.theta_F),
+    data_insample.theta_g,
+    data_insample.firstDates,
+    data_insample.tradeDates,
+    data_insample.ecbRatechangeDates,
+    data_insample.T0All,
+    data_insample.TAll
+ )
+println("Regular - Kalman Done")
+ #Newton Method
+x_filt_NM, P_filt_NM, x_smooth_NM, P_smooth_NM, P_lag_NM, oAll_NM, EAll_NM,
+a0_NM, Σx_NM, Σw_NM, Σv_NM, θF_NM, θg_NM =
+  EKF.NM(
+    data_insample.zAll,
+    data_insample.oIndAll,
+    data_insample.tcAll,
+    data_insample.I_z_t,
+    data_insample.f_t,            # ← now included
+    Int(data_insample.n_c),
+    Int(data_insample.n_p),
+    Int(data_insample.n_s),
+    Int(data_insample.n_t),
+    Int(data_insample.n_u),
+    Int(data_insample.n_x),
+    Int.(data_insample.n_z_t),
+    data_insample.A_t,
+    data_insample.B_t,
+    data_insample.D_t,
+    data_insample.G_t,
+    data_insample.firstDates,
+    data_insample.tradeDates,
+    data_insample.ecbRatechangeDates,
+    data_insample.T0All,
+    data_insample.TAll,
+    data_insample.a_x,            # Vector
+    data_insample.Sigma_x,        # Matrix
+    data_insample.Sigma_w,        # Matrix
+    data_insample.Sigma_v,        # Matrix
+    data_insample.theta_F,        # Vector
+    data_insample.theta_g;        # Matrix
+    tol=1e-6,
+    maxiter=3,
+    verbose=true,
+    Newton_bool=false, #Determines if Newton then true otherwise Broyden
+    θg_bool=false,  #Detemines if too include theta_g
+  )
+  println("NM - Kalman Done")
 
-    x_pred[1] = AAll[1]*Diagonal(θF)*BAll[1]*a0
-    P_pred[1] = AAll[1]*Diagonal(θF)*BAll[1]*Σx*(AAll[1]*Diagonal(θF)*BAll[1])' + DAll[1]*Σw*DAll[1]'
+# Calculate Forward Rates and Repricing
+fAll, priceAll, innovationAll = outputData.calculateRateAndRepricing(
+    EAll,
+    data_insample.zAll,
+    data_insample.I_z_t,
+    x_smooth,
+    oAll,
+    data_insample.oIndAll,
+    data_insample.tcAll,
+    data_insample.theta_g,
+    Int.(data_insample.n_z_t),
+    Int(data_insample.n_t),
+    Int(data_insample.n_s),
+    Int(data_insample.n_u),
+);
+println("Regular - Forward Curve Calculated")
+fAll_NM, priceAll_NM, innovationAll_NM = outputData.calculateRateAndRepricing(
+    EAll_NM,
+    data_insample.zAll,
+    data_insample.I_z_t,
+    x_smooth_NM,
+    oAll_NM,
+    data_insample.oIndAll,
+    data_insample.tcAll,
+    θg_NM, # Kanske ska vara data_insample.theta_g, men känns onajs.
+    Int.(data_insample.n_z_t),
+    Int(data_insample.n_t),
+    Int(data_insample.n_s),
+    Int(data_insample.n_u),
+);
+println("NM - Forward Curve Calculated")
 
-    # Kalman Filter
-    for t = 1:T
-        if t > 1
-            x_pred[t] = AAll[t]*Diagonal(θF)*BAll[t] * x_filt[t-1]
-            P_pred[t] = AAll[t]*Diagonal(θF)*BAll[t] * P_filt[t-1] * (AAll[t]*Diagonal(θF)*BAll[t])' + DAll[t]*Σw*DAll[t]'
-        end
-        H_t, u_t, g, Gradient = pricingFunctions.taylorApprox(oAll[t], oIndAll[t], tcAll[t], x_pred[t][1:n_s], I_z_t[t], n_z_t[t])
-        R_t = GAll[t]*Σv*GAll[t]'
-        K[t] = P_pred[t]*H_t' * inv(H_t*P_pred[t]*H_t' + R_t)
+#Sample more time points (e.g., 10 evenly spaced)
+n = length(innovationAll)
+n_samples = 10
+ts = round.(Int, range(1, n, length=n_samples))
 
-        innovation = vec(zAll[t]) - H_t*x_pred[t] - u_t
-        x_filt[t] = x_pred[t] + K[t]*innovation
-        P_filt[t] = (I - K[t]*H_t) * P_pred[t]
+### === Write Regular (non-Newton) results === ###
+regular_params = [
+    "a0" => vec(data_insample.a_x),
+    "Σx" => data_insample.Sigma_x,
+    "Σw" => data_insample.Sigma_w,
+    "Σv" => data_insample.Sigma_v,
+    "θF" => vec(data_insample.theta_F),
+    "θg" => data_insample.theta_g,
+]
+
+open("regular.csv", "w") do io
+    println(io, "Regular Parameters")
+    for (label, param) in regular_params
+        println(io, label)
+        show(IOContext(io, :limit => false), "text/plain", param)
+        println(io, "\n")
     end
-    H_T, u_T, g, Gradient = pricingFunctions.taylorApprox(oAll[T], oIndAll[T], tcAll[T], x_pred[T][1:n_s], I_z_t[T], n_z_t[T])
-    # RTS Smoother
-    x_smooth = deepcopy(x_filt)
-    P_smooth = deepcopy(P_filt)
-    S = [zeros(n_x,n_x) for _ in 1:T-1]
 
-    for t = T-1:-1:1
-        S[t] = P_filt[t]*(AAll[t+1]*Diagonal(θF)*BAll[t+1])'*inv(P_pred[t+1])
-        x_smooth[t] += S[t]*(x_smooth[t+1] - x_pred[t+1])
-        P_smooth[t] += S[t]*(P_smooth[t+1] - P_pred[t+1])*S[t]'
+    println(io, "Average Innovations at Selected Time Points (t, mean_innovation)")
+    for t in ts
+        i = vec(innovationAll[t, :])
+        mean_i = mean(i)
+        println(io, "t = $t, mean_innovation = $mean_i")
     end
-
-    # Lag-one covariance smoothing
-    P_lag = [zeros(n_x,n_x) for _ in 1:T]
-    P_lag[T] = (I - K[T]*H_T) * AAll[T]*Diagonal(θF)*BAll[T] * P_filt[T-1]
-
-    for t = T-1:-1:2
-        P_lag[t] = P_filt[t]*S[t-1]' + S[t]*(P_lag[t+1] - AAll[t+1]*Diagonal(θF)*BAll[t+1]*P_filt[t])*S[t-1]'
-    end
-
-    return x_filt, P_filt, x_smooth, P_smooth, P_lag
 end
+println("Regular - Data CSV Done")
 
+### === Write Newton Method results === ###
+nm_params = [
+    "a0_NM" => a0_NM,
+    "Σx_NM" => Σx_NM,
+    "Σw_NM" => Σw_NM,
+    "Σv_NM" => Σv_NM,
+    "θF_NM" => θF_NM,
+    "θg_NM" => θg_NM,
+]
 
-# Initialize 
-oAll = [zeros(103, 22) for _ in 1:data.n_t]
-EAll = [zeros(3661, 6) for _ in 1:data.n_t]
+open("NM.csv", "w") do io
+    println(io, "Newton Method Parameters")
+    for (label, param) in nm_params
+        println(io, label)
+        show(IOContext(io, :limit => false), "text/plain", param)
+        println(io, "\n")
+    end
 
-# Calculate oAll
-for t in 1:Int(data.n_t)
-    oAll[t], EAll[t] = pricingFunctions.calcO(
-        data.firstDates[t],
-        data.tradeDates[t],
-        data.theta_g,
-        data.ecbRatechangeDates,
-        data.n_c,
-        data.n_z_t[t],
-        data.T0All[t],
-        data.TAll[t]
-    )
+    println(io, "Average Innovations at Selected Time Points (t, mean_innovation_NM)")
+    for t in ts
+        i = vec(innovationAll_NM[t, :])
+        mean_i = mean(i)
+        println(io, "t = $t, mean_innovation_NM = $mean_i")
+    end
 end
+println("Newton Method - Data CSV Done")
 
-x_filt, P_filt, x_smooth, P_smooth, P_lag = kalman_filter_smoother_lag1(data.zAll, oAll, data.oIndAll, data.tcAll, data.I_z_t, data.f_t, Int(data.n_c), Int(data.n_p), Int(data.n_s), Int(data.n_t), Int(data.n_u), Int(data.n_x), Int.(data.n_z_t), data.A_t, data.B_t, data.D_t, data.G_t, data.Sigma_w, data.Sigma_v, vec(data.a_x), data.Sigma_x, vec(data.theta_F), data.theta_g);
+# Plot Forward Rate Curve (Should be done in Matlab instead)
+plt1 = plots.plot3DCurve(data_insample.times, fAll, "Regular")
+plt2 = plots.plot3DCurve(data_insample.times, fAll_NM, "Newton Method")
 
-
-fAll, priceAll = outputData.calculateRateAndRepricing(
-    EAll, data.zAll, data.I_z_t, x_smooth, oAll, data.oIndAll, data.tcAll, data.theta_g, Int.(data.n_z_t), Int(data.n_t), Int(data.n_s)
-)
-
-T_new = Int(data.n_t/2)
-
-plots.plot3DCurve(data.times, fAll)
-
-
-
-
-# function dummy_nll(ψ)
-#     x, y = ψ
-#     return x^2 + 2y^2
-# end
-
-# ψ₀ = [4.0, -5.0]
-# ψ_opt = newtonMethod.newtonOptimize(dummy_nll, ψ₀; verbose=true)
-
-# println("\nOptimized ψ = ", ψ_opt)
-
+display(plt1)
+println("Regular - Plot Done")
+display(plt2)
+println("NM - Plot Done")

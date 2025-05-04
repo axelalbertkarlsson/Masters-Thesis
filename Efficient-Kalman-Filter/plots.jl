@@ -9,20 +9,15 @@ function matlab2date(serial::Real)
     return Date("0000-01-01") + Day(round(Int, serial))
 end
 
-function plot3DCurve(times, fAll)
+function plot3DCurve(times, fAll, subtitle)
     maturities = (1:size(fAll, 1)) ./ 365
     fMatrix = fAll'
 
-    # Convert serial dates to actual Date format
     dates = matlab2date.(times)
 
-    # Plot directly without meshgrid: use surface(xvec, yvec, zmatrix)
-    surface(
+    plt = surface(
         maturities, dates, fMatrix;
-        # xlabel = nothing,
-        # ylabel = nothing,
-        # zlabel = nothing,
-        title = "Synthetic Forward Rate Surface",
+        title = "Synthetic Forward Rate Surface - " * subtitle,
         color = :jet, 
         camera = (-45, 30),
         cbar = true,
@@ -38,8 +33,8 @@ function plot3DCurve(times, fAll)
         zlims = (minimum(fAll), maximum(fAll)),
     )
     
-    
-    
+    return plt
 end
+
 
 end # module
