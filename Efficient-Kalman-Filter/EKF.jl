@@ -1,4 +1,4 @@
-# newtonMethodRev.jl
+#EKF.jl
 module EKF
 
 using LinearAlgebra
@@ -86,37 +86,60 @@ function NM(
     θF_0::AbstractArray{Float64},
     θg_0::AbstractArray{Float64};
     tol::Float64=1e-6,
-    maxiter::Int=50,
-    verbose::Bool=false
+    maxiter::Int=10,
+    verbose::Bool=false,
+    Newton_bool::Bool=false,
+    θg_bool::Bool=false,  
 )
     # flatten ψ₀
-    ψ0 = vcat(vec(a0_0), vec(Σx_0), vec(Σw_0), vec(Σv_0), vec(θg_0), vec(θF_0))
-
+    if (θg_bool)
+        ψ0 = vcat(vec(a0_0), vec(Σx_0), vec(Σw_0), vec(Σv_0), vec(θg_0), vec(θF_0))
+    else
+        ψ0 = vcat(vec(a0_0), vec(Σx_0), vec(Σw_0), vec(Σv_0), vec(θF_0))
+    end
+    
+    
     # chunk lengths
-    len_a0 = length(a0_0)
-    len_Sx = length(Σx_0)
-    len_Sw = length(Σw_0)
-    len_Sv = length(Σv_0)
-    len_g  = length(vec(θg_0))
-    len_F  = length(θF_0)
-    shape_g = size(θg_0)
+    if (θg_bool)
+        len_a0 = length(a0_0)
+        len_Sx = length(Σx_0)
+        len_Sw = length(Σw_0)
+        len_Sv = length(Σv_0)
+        len_g  = length(vec(θg_0))
+        len_F  = length(θF_0)
+        shape_g = size(θg_0)
+    else
+        len_a0 = length(a0_0)
+        len_Sx = length(Σx_0)
+        len_Sw = length(Σw_0)
+        len_Sv = length(Σv_0)
+        len_F  = length(θF_0)
+    end
+
+    
 
     # unpack helper
-    function psi_to_parameters(ψ)
+    function psi_to_parameters(ψ, θg_bool)
         idx = 1
+        
+        θF  = ψ[idx:idx+len_F-1]
         a0  = ψ[idx:idx+len_a0-1]; idx += len_a0
         Σx  = reshape(ψ[idx:idx+len_Sx-1], size(Σx_0)); idx += len_Sx
         Σw  = reshape(ψ[idx:idx+len_Sw-1], size(Σw_0)); idx += len_Sw
         Σv  = reshape(ψ[idx:idx+len_Sv-1], size(Σv_0)); idx += len_Sv
-        g_flat = ψ[idx:idx+len_g-1]; idx += len_g
-        θg  = reshape(g_flat, shape_g)
+        if (θg_bool)
+            θg  = reshape(g_flat, shape_g)
+        else
+            θg  = θg_0 
+        end
         θF  = ψ[idx:idx+len_F-1]
         return a0, Σx, Σw, Σv, θF, θg
     end
 
     # objective: negative log‐likelihood (filter only)
     fobj = function(ψ)
-        a0, Σx, Σw, Σv, θF, θg = psi_to_parameters(ψ)
+        try
+        a0, Σx, Σw, Σv, θF, θg = psi_to_parameters(ψ, θg_bool)
         # allow tracked arrays by using Any
         x_pred     = Vector{Any}(undef, n_t)
         P_pred     = Vector{Any}(undef, n_t)
@@ -158,13 +181,21 @@ function NM(
         end
 
         return 0.5 * neg2ℓ
+        catch err
+        # if anything went wrong (singular matrix, NaNs, etc.),
+        # return Inf so BFGS’ line-search backs off safely.
+        return Inf
+      end
     end
 
     # optimize
-    ψ_opt = newtonOptimize(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
-
+    if (Newton_bool)
+        ψ_opt = newtonOptimize(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
+    else
+        ψ_opt = newtonOptimizeBroyden(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
+    end
     # unpack
-    a0_opt, Σx_opt, Σw_opt, Σv_opt, θF_opt, θg_opt = psi_to_parameters(ψ_opt)
+    a0_opt, Σx_opt, Σw_opt, Σv_opt, θF_opt, θg_opt = psi_to_parameters(ψ_opt, θg_bool)
 
     # run full smoother
     x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll =
