@@ -1,4 +1,4 @@
-module loadData
+module loadData32
 
 using MAT
 
@@ -247,5 +247,3 @@ function convert_to_f32(d::KalmanData)
         Float32.(d.n_z_t)
     )
 end
-
-

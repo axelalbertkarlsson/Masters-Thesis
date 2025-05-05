@@ -11,12 +11,11 @@ export newtonStep, newtonOptimize, newtonOptimizeBroyden
         grad_tape = ReverseDiff.GradientTape(f, ψ0)
         println("→ Compiling gradient tape…")
         ReverseDiff.compile(grad_tape)
-        # println("→ Building Hessian tape…")
-        # hess_tape = ReverseDiff.HessianTape(f, ψ0)
-        # println("→ Compiling Hessian tape…")
-        # ReverseDiff.compile(hess_tape)
-        # println("→ Done compiling tapes.")
-        hess_tape = 0
+        println("→ Building Hessian tape…")
+        hess_tape = ReverseDiff.HessianTape(f, ψ0)
+        println("→ Compiling Hessian tape…")
+        ForwardDiff.compile(hess_tape)
+        println("→ Done compiling tapes.")
         return grad_tape, hess_tape
       end
       
@@ -35,9 +34,8 @@ function newtonStep(f, grad_tape, hess_tape,
     ReverseDiff.gradient!(g, grad_tape, ψ)
 
     # 2) Hessian
-    # H = zeros(n, n)
-    # ReverseDiff.hessian!(H, hess_tape, ψ)
-    H = ForwardDiff.hessian(f, ψ)
+    H = zeros(n, n)
+    ForwardDiff.hessian!(H, hess_tape, ψ)
 
     # 3) Newton direction Δψ = −H⁻¹ g
     Δψ = - H \ g

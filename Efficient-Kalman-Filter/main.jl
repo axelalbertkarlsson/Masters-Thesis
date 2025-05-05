@@ -1,6 +1,7 @@
 using Revise, LinearAlgebra, Plots, DataFrames, CSV, Statistics
 
-include("loadData.jl")
+include("loadData32.jl")
+include("loadData64.jl")
 include("pricingFunctions.jl")
 include("newtonMethod.jl")
 include("outputData.jl")
@@ -11,21 +12,34 @@ using .EKF
 using .plots
 using .outputData
 using .newtonMethod
-using .loadData
+using .loadData32
+using .loadData64
 using .pricingFunctions
 
 # Clears terminal
 clear() = print("\e[2J\e[H")
 
-# Load full data
-data = loadData.run()
-
 # Split data: p% in-sample, (1-p)% out-of-sample
-p = 0.1
-split = loadData.split_data(data, p)
-data_insample = split.insample
-data_outsample = split.outsample
+p = 0.01
 
+Float32_bool = true
+
+if (!Float32_bool)
+    # load as Float64 
+    println("Data in Float64")
+    data = loadData64.run()
+    split = loadData64.split_data(data, p)
+    data_insample = split.insample
+    data_outsample = split.outsample
+else
+    # load as Float32
+    println("Data in Float32")
+    data = loadData32.run()
+    p = 0.1
+    split = loadData32.split_data(data, p)
+    data_insample = split.insample
+    data_outsample = split.outsample
+end
 # Run Filter
 x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll = EKF.kalman_filter_smoother_lag1(
     data_insample.zAll,
@@ -91,7 +105,7 @@ a0_NM, Σx_NM, Σw_NM, Σv_NM, θF_NM, θg_NM =
     tol=1e-6,
     maxiter=3,
     verbose=true,
-    Newton_bool=false, #Determines if Newton then true otherwise Broyden
+    Newton_bool=true, #Determines if Newton then true otherwise Broyden
     θg_bool=false,  #Detemines if too include theta_g
   )
   println("NM - Kalman Done")
