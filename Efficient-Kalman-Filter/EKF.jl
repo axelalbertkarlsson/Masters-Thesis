@@ -79,12 +79,12 @@ function NM(
     n_c, n_p, n_s, n_t, n_u, n_x, n_z_t,
     AAll, BAll, DAll, GAll,
     firstDates, tradeDates, ecbRatechangeDates, T0All, TAll,
-    a0_0::AbstractArray{Float64},
-    Σx_0::AbstractArray{Float64},
-    Σw_0::AbstractArray{Float64},
-    Σv_0::AbstractArray{Float64},
-    θF_0::AbstractArray{Float64},
-    θg_0::AbstractArray{Float64};
+    a0_0::AbstractArray{<:AbstractFloat},
+    Σx_0::AbstractArray{<:AbstractFloat},
+    Σw_0::AbstractArray{<:AbstractFloat},
+    Σv_0::AbstractArray{<:AbstractFloat},
+    θF_0::AbstractArray{<:AbstractFloat},
+    θg_0::AbstractArray{<:AbstractFloat};
     tol::Float64=1e-6,
     maxiter::Int=10,
     verbose::Bool=false,

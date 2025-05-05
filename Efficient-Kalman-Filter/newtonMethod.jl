@@ -6,7 +6,7 @@ using ReverseDiff, LinearAlgebra, Optim, LineSearches, ForwardDiff
 export newtonStep, newtonOptimize, newtonOptimizeBroyden
 
 # === Build compiled tapes for gradient & Hessian ===
-    function setup_tapes(f::Function, ψ0::AbstractVector{<:Float64})
+    function setup_tapes(f::Function, ψ0::AbstractVector{<:AbstractFloat})
         println("→ Building gradient tape…")
         grad_tape = ReverseDiff.GradientTape(f, ψ0)
         println("→ Compiling gradient tape…")
@@ -22,7 +22,7 @@ export newtonStep, newtonOptimize, newtonOptimizeBroyden
 
 # === One Newton step, with Armijo backtracking ===
 function newtonStep(f, grad_tape, hess_tape,
-                    ψ::AbstractVector{<:Float64};
+                    ψ::AbstractVector{<:AbstractFloat};
                     α::Float64=1e-4,
                     s0::Float64=1.0,
                     s_min::Float64=1e-8,
@@ -56,7 +56,7 @@ function newtonStep(f, grad_tape, hess_tape,
 end
 
 # === Full Newton optimizer ===
-function newtonOptimize(f, ψ₀::AbstractVector{<:Float64};
+function newtonOptimize(f, ψ₀::AbstractVector{<:AbstractFloat};
                         tol::Float64=1e-4,
                         maxiter::Int=5,
                         verbose::Bool=false)

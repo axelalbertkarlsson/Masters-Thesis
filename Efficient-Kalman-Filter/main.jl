@@ -103,7 +103,7 @@ a0_NM, Σx_NM, Σw_NM, Σv_NM, θF_NM, θg_NM =
     tol=1e-6,
     maxiter=3,
     verbose=true,
-    Newton_bool=true, #Determines if Newton then true otherwise Broyden
+    Newton_bool=false, #Determines if Newton then true otherwise Broyden
     θg_bool=false,  #Detemines if too include theta_g
   )
   println("NM - Kalman Done")
