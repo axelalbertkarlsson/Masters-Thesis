@@ -1,7 +1,6 @@
 using Revise, LinearAlgebra, Plots, DataFrames, CSV, Statistics
 
-include("loadData32.jl")
-include("loadData64.jl")
+include("loadData.jl")
 include("pricingFunctions.jl")
 include("newtonMethod.jl")
 include("outputData.jl")
@@ -12,8 +11,7 @@ using .EKF
 using .plots
 using .outputData
 using .newtonMethod
-using .loadData32
-using .loadData64
+using .loadData
 using .pricingFunctions
 
 # Clears terminal
@@ -27,19 +25,19 @@ Float32_bool = true
 if (!Float32_bool)
     # load as Float64 
     println("Data in Float64")
-    data = loadData64.run()
-    split = loadData64.split_data(data, p)
+    data = loadData.run("Efficient-Kalman-Filter/Data")               # Float64 data
+    split = loadData.split_data(data, p)
     data_insample = split.insample
     data_outsample = split.outsample
 else
     # load as Float32
     println("Data in Float32")
-    data = loadData32.run()
-    p = 0.1
-    split = loadData32.split_data(data, p)
+    data = loadData.run("Efficient-Kalman-Filter/Data"; T=Float32)   # Float32 data
+    split = loadData.split_data(data, p)
     data_insample = split.insample
     data_outsample = split.outsample
 end
+
 # Run Filter
 x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll = EKF.kalman_filter_smoother_lag1(
     data_insample.zAll,
