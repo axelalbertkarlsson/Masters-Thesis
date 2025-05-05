@@ -121,20 +121,29 @@ function NM(
     # unpack helper
     function psi_to_parameters(ψ, θg_bool)
         idx = 1
-        
-        θF  = ψ[idx:idx+len_F-1]
-        a0  = ψ[idx:idx+len_a0-1]; idx += len_a0
-        Σx  = reshape(ψ[idx:idx+len_Sx-1], size(Σx_0)); idx += len_Sx
-        Σw  = reshape(ψ[idx:idx+len_Sw-1], size(Σw_0)); idx += len_Sw
-        Σv  = reshape(ψ[idx:idx+len_Sv-1], size(Σv_0)); idx += len_Sv
-        if (θg_bool)
-            θg  = reshape(g_flat, shape_g)
+      
+        # initial state
+        a0 = ψ[idx:idx+len_a0-1];                     idx += len_a0
+      
+        # Σx, Σw, Σv
+        Σx = reshape(ψ[idx:idx+len_Sx-1], size(Σx_0)); idx += len_Sx
+        Σw = reshape(ψ[idx:idx+len_Sw-1], size(Σw_0)); idx += len_Sw
+        Σv = reshape(ψ[idx:idx+len_Sv-1], size(Σv_0)); idx += len_Sv
+      
+        # θg if requested
+        if θg_bool
+          θg_flat = ψ[idx:idx+len_g-1];                idx += len_g
+          θg      = reshape(θg_flat, shape_g)
         else
-            θg  = θg_0 
+          θg = θg_0
         end
-        θF  = ψ[idx:idx+len_F-1]
+      
+        # finally θF
+        θF = ψ[idx:idx+len_F-1]
+      
         return a0, Σx, Σw, Σv, θF, θg
-    end
+      end
+      
 
     # objective: negative log‐likelihood (filter only)
     fobj = function(ψ)

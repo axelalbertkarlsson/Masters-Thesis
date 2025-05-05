@@ -20,7 +20,7 @@ clear() = print("\e[2J\e[H")
 # Split data: p% in-sample, (1-p)% out-of-sample
 p = 0.01
 
-Float32_bool = true
+Float32_bool = false
 
 if (!Float32_bool)
     # load as Float64 
@@ -104,7 +104,7 @@ a0_NM, Σx_NM, Σw_NM, Σv_NM, θF_NM, θg_NM =
     maxiter=3,
     verbose=true,
     Newton_bool=false, #Determines if Newton then true otherwise Broyden
-    θg_bool=false,  #Detemines if too include theta_g
+    θg_bool=true,  #Detemines if too include theta_g
   )
   println("NM - Kalman Done")
 
