@@ -1,81 +1,127 @@
-# newtonMethodRev.jl
+# newtonMethod.jl
+
 module newtonMethod
 
-using ReverseDiff, LinearAlgebra, Optim, LineSearches, ForwardDiff
+using ReverseDiff, LinearAlgebra, IterativeSolvers, LinearMaps, ForwardDiff, Optim, LineSearches
 
-export newtonStep, newtonOptimize, newtonOptimizeBroyden
+export newtonStep, newtonOptimize, newtonOptimizeBroyden, newtonOptimizeHF
 
-# === Build compiled tapes for gradient & Hessian ===
-    function setup_tapes(f::Function, ψ0::AbstractVector{<:AbstractFloat})
-        println("→ Building gradient tape…")
-        grad_tape = ReverseDiff.GradientTape(f, ψ0)
-        println("→ Compiling gradient tape…")
-        ReverseDiff.compile(grad_tape)
-        println("→ Building Hessian tape…")
-        hess_tape = ReverseDiff.HessianTape(f, ψ0)
-        println("→ Compiling Hessian tape…")
-        ForwardDiff.compile(hess_tape)
-        println("→ Done compiling tapes.")
-        return grad_tape, hess_tape
-      end
-      
-
-# === One Newton step, with Armijo backtracking ===
+# ———————————————————————————————————————————————————————————————————————
+# Full Newton (unchanged)
 function newtonStep(f, grad_tape, hess_tape,
-                    ψ::AbstractVector{<:AbstractFloat};
-                    α::Float64=1e-4,
-                    s0::Float64=1.0,
-                    s_min::Float64=1e-8,
-                    verbose::Bool=false)
-
+                    ψ; α=1e-4, s0=1.0, s_min=1e-8, verbose=false)
     n = length(ψ)
-    # 1) gradient
-    g = zeros(n)
-    ReverseDiff.gradient!(g, grad_tape, ψ)
-
-    # 2) Hessian
-    H = zeros(n, n)
-    ForwardDiff.hessian!(H, hess_tape, ψ)
-
-    # 3) Newton direction Δψ = −H⁻¹ g
+    g = zeros(n); ReverseDiff.gradient!(g, grad_tape, ψ)
+    H = zeros(n,n); ForwardDiff.hessian!(H, hess_tape, ψ)
     Δψ = - H \ g
-
-    # 4) backtracking line search (Armijo)
-    f0 = f(ψ)
-    s = s0
-    while s ≥ s_min && f(ψ .+ s .* Δψ) > f0 + α * s * dot(g, Δψ)
+    f0 = f(ψ); s = s0
+    while s ≥ s_min && f(ψ .+ s.*Δψ) > f0 + α*s*dot(g,Δψ)
         s *= 0.5
     end
-
-    if verbose
-        println("  ‖Δψ‖ = ", norm(Δψ), "   step size = ", s)
-    end
-
-    ψ_new = ψ .+ s .* Δψ
-    return ψ_new, norm(Δψ)
+    verbose && println("  ‖Δψ‖=",norm(Δψ)," step=",s)
+    return ψ .+ s.*Δψ, norm(Δψ)
 end
 
-# === Full Newton optimizer ===
-function newtonOptimize(f, ψ₀::AbstractVector{<:AbstractFloat};
-                        tol::Float64=1e-4,
-                        maxiter::Int=5,
-                        verbose::Bool=false)
-
+function newtonOptimize(f, ψ₀; tol=1e-4, maxiter=5, verbose=false)
     ψ = copy(ψ₀)
-    grad_tape, hess_tape = setup_tapes(f, ψ₀)
-
+    println("-> Building Gradient tape...")
+    grad_tape = ReverseDiff.GradientTape(f, ψ₀)
+    println("-> Compiling Gradient tape...")
+    ReverseDiff.compile(grad_tape)
+    println("-> Building Hessian tape...")
+    hess_tape = ReverseDiff.HessianTape(f, ψ₀)
+    println("-> Compiling Hessian tape...")
+    ForwardDiff.compile!(hess_tape)
     for k in 1:maxiter
-        ψ_new, δnorm = newtonStep(f, grad_tape, hess_tape, ψ; verbose=verbose)
-        if δnorm < tol
-            verbose && println("Converged at iter = $k (‖Δψ‖=$δnorm)")
-            return ψ_new
-        end
+        ψ_new, δ = newtonStep(f, grad_tape, hess_tape, ψ; verbose=verbose)
         ψ = ψ_new
+        if δ < tol
+            verbose && println("Converged at iter $k")
+            break
+        end
     end
-
-    verbose && println("Reached maxiter = $maxiter (‖Δψ‖=$(δnorm))")
     return ψ
 end
+
+# ———————————————————————————————————————————————————————————————————————
+# Hessian-free Newton
+"""
+    newtonOptimizeHF(f, ψ₀; tol, maxiter, verbose)
+
+Uses ReverseDiff for ∇f and finite-difference to build H·v,
+then Conjugate-Gradient on the LinearMap to approximate Δψ.
+"""
+function newtonOptimizeHF(f, ψ₀::Vector{Float64};
+    tol::Float64=1e-6,
+    maxiter::Int=5,
+    verbose::Bool=false
+)
+    ψ = copy(ψ₀)
+    n = length(ψ)
+
+    # Quick sanity check
+    f0   = f(ψ)
+    g0   = ForwardDiff.gradient(f, ψ)
+    println("Sanity HF @ ψ₀ → f = $f0, ‖g‖ = $(norm(g0))")
+
+    for k in 1:maxiter
+        # 1) gradient via ForwardDiff
+        g = ForwardDiff.gradient(f, ψ)
+
+        # 2) finite-difference Hessian-vector product
+        ε = eps(Float64)^(1/3)
+        grad_tape = ReverseDiff.GradientTape(f, ψ)
+        ReverseDiff.compile(grad_tape)
+        Hlin = LinearMap{Float64}((v,out)->begin
+            gp = similar(out); ReverseDiff.gradient!(gp, grad_tape, ψ .+ ε .* v)
+            gm = similar(out); ReverseDiff.gradient!(gm, grad_tape, ψ .- ε .* v)
+            @. out = (gp - gm)/(2ε)
+        end, n, n; ismutating=true)
+
+        # 3) CG solve H Δψ = -g
+        Δψ, _ = cg(Hlin, -g; abstol=tol, maxiter=50)
+
+        # guard against NaN or absurd steps
+        if any(!isfinite, Δψ) || !isfinite(norm(Δψ)) || norm(Δψ) > 1e6
+            @warn "HF produced invalid step (NaN or too large norm=$(norm(Δψ))); aborting HF."
+            break
+        end
+
+        # 4) robust backtracking on f
+        found_good_step = false
+        s = 1.0
+        base = f(ψ)
+        while s > 1e-8
+            candidate = ψ .+ s .* Δψ
+            ftrial = f(candidate)
+            if isfinite(ftrial) && ftrial < base
+                found_good_step = true
+                ψ .= candidate
+                break
+            else
+                s *= 0.5
+            end
+        end
+
+        if !found_good_step
+            @warn "HF line-search failed to find a finite, improving ftrial; stopping HF."
+            break
+        end
+
+        verbose && println(" HF iter $k → ‖Δψ‖=$(norm(Δψ)), step=$s, f=$(f(ψ))")
+
+        # convergence check
+        if norm(Δψ) < tol
+            verbose && println(" HF converged at iter $k (‖Δψ‖=$(norm(Δψ)))")
+            break
+        end
+    end
+
+    return ψ
+end
+
+
+# ———————————————————————————————————————————————————————————————————————
 function newtonOptimizeBroyden(f, ψ₀; tol=1e-6, maxiter=10, verbose=false)
     @info "Starting BFGS optimization" tol=tol maxiter=maxiter
 
@@ -104,7 +150,7 @@ function newtonOptimizeBroyden(f, ψ₀; tol=1e-6, maxiter=10, verbose=false)
 
     # build a BFGS optimizer that uses plain backtracking
     bt = LineSearches.BackTracking()
-    method = Optim.BFGS(linesearch = bt)
+    method = Optim.LBFGS(linesearch = LineSearches.BackTracking(), m=20)
 
     res = optimize(f, gradient!, ψ₀, method, opts)
 
