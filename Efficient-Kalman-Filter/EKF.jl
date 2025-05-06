@@ -11,6 +11,107 @@ using .pricingFunctions
 
 export kalman_filter_smoother_lag1, NM
 
+# ———————————————————————————————————————————————————————————————————————
+# Reparameterized pack / unpack for ψ → (a0, Σx, Σw, Σv, θF, θg)
+# ensures all covariances remain SPD under small perturbations.
+
+# These length/shape constants must be defined before NM is called.
+# You can compute them just inside NM before packing ψ₀.
+# For clarity they appear here as comments:
+
+# n_x  = size(Σx_0,1)
+# m_w  = size(Σw_0,1)
+# p_v  = size(Σv_0,1)
+# r_g  = θg_bool ? length(vec(θg_0)) : 0
+# len_a0 = length(a0_0)
+# len_Lx  = n_x*(n_x+1) ÷ 2
+# len_Lw  = m_w*(m_w+1) ÷ 2
+# len_Lv  = p_v*(p_v+1) ÷ 2
+# len_F   = length(θF_0)
+
+"""
+    symmetrize_and_jitter(Σ::AbstractMatrix{T}) where T<:Real
+
+Given Σ = L * L', enforce exact symmetry then add a tiny
+Tikhonov jitter δ·I so that Σ is numerically SPD.
+"""
+function symmetrize_and_jitter(Σ::AbstractMatrix{T}) where T<:Real
+    # 1) exact symmetry
+    Σs = 0.5*(Σ + Σ')
+    # 2) adaptive jitter at least 1e-12, or eps·trace(Σ)
+    δ = max(eps(T)*tr(Σs), T(1e-12))
+    return Σs + δ*I(size(Σs,1))
+end
+
+# Unpack ψ → parameters
+# ———————————————————————————————————————————————————————————————————————
+# Unpack ψ → (a0, Σx, Σw, Σv, θF, θg)
+function psi_to_parameters(ψ, θg_bool,
+    len_a0, n_x, m_w, p_v, r_g, len_F,
+    Σx_0, Σw_0, Σv_0, θg_0)
+idx = 1
+Treal = eltype(ψ)
+if Treal == Float64 && any(!isfinite, ψ)
+error("ψ has non-finite entries: ", ψ)
+end
+
+# 1) a0
+a0 = ψ[idx:idx+len_a0-1]; idx += len_a0
+
+# 2) Σx
+Lx = zeros(Treal, n_x, n_x)
+for i in 1:n_x
+Lx[i,i] = exp(ψ[idx]); idx += 1
+end
+for j in 1:n_x, i in (j+1):n_x
+Lx[i,j] = ψ[idx]; idx += 1
+end
+# enforce symmetry + jitter
+Σx = symmetrize_and_jitter(Lx * Lx')
+@assert isposdef(Σx)   "Σx is still not numerically SPD"
+@assert all(isfinite, Σx) "Σx contains non-finite entries"
+
+# 3) Σw
+Lw = zeros(Treal, m_w, m_w)
+for i in 1:m_w
+Lw[i,i] = exp(ψ[idx]); idx += 1
+end
+for j in 1:m_w, i in (j+1):m_w
+Lw[i,j] = ψ[idx]; idx += 1
+end
+Σw = symmetrize_and_jitter(Lw * Lw')
+@assert isposdef(Σw)   "Σw is still not numerically SPD"
+@assert all(isfinite, Σw) "Σw contains non-finite entries"
+
+# 4) Σv
+Lv = zeros(Treal, p_v, p_v)
+for i in 1:p_v
+Lv[i,i] = exp(ψ[idx]); idx += 1
+end
+for j in 1:p_v, i in (j+1):p_v
+Lv[i,j] = ψ[idx]; idx += 1
+end
+Σv = symmetrize_and_jitter(Lv * Lv')
+@assert isposdef(Σv)   "Σv is still not numerically SPD"
+@assert all(isfinite, Σv) "Σv contains non-finite entries"
+
+# 5) θg
+if θg_bool
+θg_flat = ψ[idx:idx+r_g-1]; idx += r_g
+θg = reshape(θg_flat, size(θg_0))
+else
+θg = θg_0
+end
+
+# 6) θF
+# last block of ψ is the log-θF entries
+logθF = ψ[idx:idx+len_F-1]
+θF    = exp.(logθF)  # back to the positive scale
+
+return a0, Σx, Σw, Σv, θF, θg
+end
+
+
 function kalman_filter_smoother_lag1(zAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p, n_s, n_t, n_u, n_x, n_z_t, AAll, BAll, DAll, GAll, Σw, Σv, a0, Σx, θF, θg, firstDates, tradeDates, ecbRatechangeDates, T0All,TAll)
     T = n_t;
 
@@ -74,150 +175,139 @@ function kalman_filter_smoother_lag1(zAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p,
     return x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll
 end
 
+function safeS(H, P, R)
+    S = 0.5*(H*P*H' + R + (H*P*H' + R)')   # symmetrize in one go
+    δ = eps(eltype(S)) * tr(S)
+    return S + δ * I(size(S,1))
+end
+
+
 function NM(
     zAll, oIndAll, tcAll, I_z_t, f_t,
     n_c, n_p, n_s, n_t, n_u, n_x, n_z_t,
     AAll, BAll, DAll, GAll,
     firstDates, tradeDates, ecbRatechangeDates, T0All, TAll,
-    a0_0::AbstractArray{<:AbstractFloat},
-    Σx_0::AbstractArray{<:AbstractFloat},
-    Σw_0::AbstractArray{<:AbstractFloat},
-    Σv_0::AbstractArray{<:AbstractFloat},
-    θF_0::AbstractArray{<:AbstractFloat},
-    θg_0::AbstractArray{<:AbstractFloat};
-    tol::Float64=1e-6,
-    maxiter::Int=10,
-    verbose::Bool=false,
-    Newton_bool::Bool=false,
-    θg_bool::Bool=false,  
+    a0_0, Σx_0, Σw_0, Σv_0, θF_0, θg_0;
+    tol=1e-6, maxiter=10, verbose=false,
+    Newton_bool=false, θg_bool=false, HF_bool=false
 )
-    # flatten ψ₀
-    if (θg_bool)
-        ψ0 = vcat(vec(a0_0), vec(Σx_0), vec(Σw_0), vec(Σv_0), vec(θg_0), vec(θF_0))
-    else
-        ψ0 = vcat(vec(a0_0), vec(Σx_0), vec(Σw_0), vec(Σv_0), vec(θF_0))
+    # — dimension constants —
+    n_x    = size(Σx_0,1)
+    m_w    = size(Σw_0,1)
+    p_v    = size(Σv_0,1)
+    r_g    = θg_bool ? length(vec(θg_0)) : 0
+    len_a0 = length(a0_0)
+    len_F  = length(θF_0)
+
+    len_Lx = n_x*(n_x+1) ÷ 2
+    len_Lw = m_w*(m_w+1) ÷ 2
+    len_Lv = p_v*(p_v+1) ÷ 2
+    total_expected = len_a0 + len_Lx + len_Lw + len_Lv + r_g + len_F
+    println("EXPECTED ψ length = $total_expected")
+
+    # — pack initial ψ0 via Cholesky reparam —
+    ψ0 = Float64[]
+    append!(ψ0, vec(a0_0))
+    function push_chol!(M,n)
+        L = cholesky(M).L
+        for i in 1:n; push!(ψ0, log(L[i,i])); end
+        for j in 1:n, i in (j+1):n; push!(ψ0, L[i,j]); end
     end
-    
-    
-    # chunk lengths
-    if (θg_bool)
-        len_a0 = length(a0_0)
-        len_Sx = length(Σx_0)
-        len_Sw = length(Σw_0)
-        len_Sv = length(Σv_0)
-        len_g  = length(vec(θg_0))
-        len_F  = length(θF_0)
-        shape_g = size(θg_0)
-    else
-        len_a0 = length(a0_0)
-        len_Sx = length(Σx_0)
-        len_Sw = length(Σw_0)
-        len_Sv = length(Σv_0)
-        len_F  = length(θF_0)
-    end
+    push_chol!(Σx_0, n_x)
+    push_chol!(Σw_0, m_w)
+    push_chol!(Σv_0, p_v)
+    θg_bool && append!(ψ0, vec(θg_0))
+    # replace raw θF with its log so that during optimization exp(·) always stays positive
+    ε = 1e-6
+    logθF₀ = log.(θF_0 .+ ε)      # avoids log(0)
+    append!(ψ0, vec(logθF₀))
 
-    
+    println("Initial ψ₀ length = ", length(ψ0), "  (should be $total_expected)")
 
-    # unpack helper
-    function psi_to_parameters(ψ, θg_bool)
-        idx = 1
-      
-        # initial state
-        a0 = ψ[idx:idx+len_a0-1];                     idx += len_a0
-      
-        # Σx, Σw, Σv
-        Σx = reshape(ψ[idx:idx+len_Sx-1], size(Σx_0)); idx += len_Sx
-        Σw = reshape(ψ[idx:idx+len_Sw-1], size(Σw_0)); idx += len_Sw
-        Σv = reshape(ψ[idx:idx+len_Sv-1], size(Σv_0)); idx += len_Sv
-      
-        # θg if requested
-        if θg_bool
-          θg_flat = ψ[idx:idx+len_g-1];                idx += len_g
-          θg      = reshape(θg_flat, shape_g)
-        else
-          θg = θg_0
-        end
-      
-        # finally θF
-        θF = ψ[idx:idx+len_F-1]
-      
-        return a0, Σx, Σw, Σv, θF, θg
-      end
-      
-
-    # objective: negative log‐likelihood (filter only)
+    # — negative log‐likelihood with local jitter —
     fobj = function(ψ)
-        try
-        a0, Σx, Σw, Σv, θF, θg = psi_to_parameters(ψ, θg_bool)
-        # allow tracked arrays by using Any
+        jitter = 1e-8
+        # unpack ψ → (a0, Σx, Σw, Σv, θF, θg)
+        a0, Σx, Σw, Σv, θF, θg = psi_to_parameters(
+            ψ, θg_bool,
+            len_a0, n_x, m_w, p_v, r_g, len_F,
+            Σx_0, Σw_0, Σv_0, θg_0
+        )
+        neg2ℓ = 0.0
         x_pred     = Vector{Any}(undef, n_t)
         P_pred     = Vector{Any}(undef, n_t)
         x_filt_loc = Vector{Any}(undef, n_t)
         P_filt_loc = Vector{Any}(undef, n_t)
-        neg2ℓ = 0.0
 
-        # t=1
-        x_pred[1] = AAll[1] * (θF .* (BAll[1] * a0))
-        K0 = BAll[1] * Σx * BAll[1]'
-        WeightedK0 = K0 .* (θF * θF')
-        P_pred[1] = AAll[1] * WeightedK0 * AAll[1]' + DAll[1] * Σw * DAll[1]'
-
-        o1,_ = calcO(firstDates[1], tradeDates[1], θg, ecbRatechangeDates, n_c, n_z_t[1], T0All[1], TAll[1])
-        H1,u1,_,_ = taylorApprox(o1, oIndAll[1], tcAll[1], x_pred[1][1:n_s], I_z_t[1], n_z_t[1])
-        R1 = GAll[1]*Σv*GAll[1]'
-        S1 = H1*P_pred[1]*H1' + R1
+        # t = 1
+        x_pred[1] = AAll[1]*(θF .* (BAll[1]*a0))
+        W0 = (BAll[1]*Σx*BAll[1]') .* (θF*θF')
+        P_pred[1] = AAll[1]*W0*AAll[1]' + DAll[1]*Σw*DAll[1]'
+        o1,_ = calcO(firstDates[1], tradeDates[1], θg, ecbRatechangeDates,
+                     n_c, n_z_t[1], T0All[1], TAll[1])
+        H1,u1,_,_ = taylorApprox(o1, oIndAll[1], tcAll[1],
+                                 x_pred[1][1:n_s], I_z_t[1], n_z_t[1])                                                       
+        #S1 = H1*P_pred[1]*H1' + GAll[1]*Σv*GAll[1]'
+        S1 = safeS(H1, P_pred[1], GAll[1]*Σv*GAll[1]')
         ε1 = vec(zAll[1]) - H1*x_pred[1] - u1
+        if !isposdef(S1) || any(!isfinite, S1) || any(!isfinite, ε1)
+            return Inf
+        end
         neg2ℓ += logdet(S1) + dot(ε1, S1\ε1)
-        Kmat = P_pred[1]*H1'*inv(S1)
-        x_filt_loc[1] = x_pred[1] + Kmat*ε1
-        P_filt_loc[1] = (I - Kmat*H1)*P_pred[1]
+        x_filt_loc[1] = x_pred[1] + (P_pred[1]*H1')*(S1\ε1)
+        P_filt_loc[1] = (I - (P_pred[1]*H1')*(S1\H1))*P_pred[1]
 
-        # t=2:T
+        # t = 2:T
         for t in 2:n_t
-            x_pred[t] = AAll[t] * (θF .* (BAll[t] * x_filt_loc[t-1]))
-            Kt = BAll[t] * P_filt_loc[t-1] * BAll[t]'
-            Wt = Kt .* (θF * θF')
-            P_pred[t] = AAll[t] * Wt * AAll[t]' + DAll[t] * Σw * DAll[t]'
-            o_t,_ = calcO(firstDates[t], tradeDates[t], θg, ecbRatechangeDates, n_c, n_z_t[t], T0All[t], TAll[t])
-            H_t,u_t,_,_ = taylorApprox(o_t, oIndAll[t], tcAll[t], x_pred[t][1:n_s], I_z_t[t], n_z_t[t])
-            R_t = GAll[t]*Σv*GAll[t]'
-            S_t = H_t*P_pred[t]*H_t' + R_t
+            x_pred[t] = AAll[t]*(θF .* (BAll[t]*x_filt_loc[t-1]))
+            Wt = (BAll[t]*P_filt_loc[t-1]*BAll[t]') .* (θF*θF')
+            P_pred[t] = AAll[t]*Wt*AAll[t]' + DAll[t]*Σw*DAll[t]'
+            o_t,_ = calcO(firstDates[t], tradeDates[t], θg,
+                          ecbRatechangeDates, n_c, n_z_t[t], T0All[t], TAll[t])
+            H_t,u_t,_,_ = taylorApprox(o_t, oIndAll[t], tcAll[t],
+                                       x_pred[t][1:n_s], I_z_t[t], n_z_t[t])
+            #S_t = H_t*P_pred[t]*H_t' + GAll[t]*Σv*GAll[t]'
+            S_t = safeS(H_t, P_pred[t], GAll[t]*Σv*GAll[t]')
             ε = vec(zAll[t]) - H_t*x_pred[t] - u_t
+
+            if !isposdef(S_t) || any(!isfinite, S_t) || any(!isfinite, ε)
+                return Inf
+            end
+
             neg2ℓ += logdet(S_t) + dot(ε, S_t\ε)
-            Kmat = P_pred[t]*H_t'*inv(S_t)
-            x_filt_loc[t] = x_pred[t] + Kmat*ε
-            P_filt_loc[t] = (I - Kmat*H_t)*P_pred[t]
+            x_filt_loc[t] = x_pred[t] + (P_pred[t]*H_t')*(S_t\ε)
+            P_filt_loc[t] = (I - (P_pred[t]*H_t')*(S_t\H_t))*P_pred[t]
         end
 
         return 0.5 * neg2ℓ
-        catch err
-        # if anything went wrong (singular matrix, NaNs, etc.),
-        # return Inf so BFGS’ line-search backs off safely.
-        return Inf
-      end
     end
 
-    # optimize
-    if (Newton_bool)
+    # — optimizer chooser —
+    if Newton_bool && HF_bool
+        ψ_opt = newtonOptimizeHF(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
+    elseif Newton_bool && !HF_bool
         ψ_opt = newtonOptimize(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
     else
         ψ_opt = newtonOptimizeBroyden(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
     end
-    # unpack
-    a0_opt, Σx_opt, Σw_opt, Σv_opt, θF_opt, θg_opt = psi_to_parameters(ψ_opt, θg_bool)
 
-    # run full smoother
-    x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll =
-        kalman_filter_smoother_lag1(
-            zAll, oIndAll, tcAll, I_z_t, f_t,
-            n_c, n_p, n_s, n_t, n_u, n_x, n_z_t,
-            AAll, BAll, DAll, GAll,
-            Σw_opt, Σv_opt, a0_opt, Σx_opt, θF_opt, θg_opt,
-            firstDates, tradeDates, ecbRatechangeDates, T0All, TAll
-        )
+    @assert length(ψ0) == total_expected "\
+ψ₀ length $(length(ψ0)) ≠ expected $total_expected" 
 
-    return x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll,
-           a0_opt, Σx_opt, Σw_opt, Σv_opt, θF_opt, θg_opt
+    # — unpack & final smoother —
+    a0_opt, Σx_opt, Σw_opt, Σv_opt, θF_opt, θg_opt = psi_to_parameters(
+        ψ_opt, θg_bool,
+        len_a0, n_x, m_w, p_v, r_g, len_F,
+        Σx_0, Σw_0, Σv_0, θg_0
+    )
+
+    return kalman_filter_smoother_lag1(
+        zAll, oIndAll, tcAll, I_z_t, f_t,
+        n_c,n_p,n_s,n_t,n_u,n_x,n_z_t,
+        AAll,BAll,DAll,GAll,
+        Σw_opt,Σv_opt,a0_opt,Σx_opt,θF_opt,θg_opt,
+        firstDates,tradeDates,ecbRatechangeDates,T0All,TAll
+    )..., a0_opt, Σx_opt, Σw_opt, Σv_opt, θF_opt, θg_opt
 end
 
 end # module
