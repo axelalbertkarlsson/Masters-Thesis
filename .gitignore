@@ -2,3 +2,6 @@ initData/EUR100.mat
 Reference-Kalman-Filter/Data/refKFVariables.mat
 Data/refKFVariables.mat
 refKFVariables.mat
+.DS_Store
+Efficient-Kalman-Filter/.DS_Store
+Reference-Kalman-Filter/.DS_Store

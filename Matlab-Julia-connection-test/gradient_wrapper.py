@@ -3,7 +3,8 @@ from julia import Julia
 jl = Julia(compiled_modules=False)
 
 from julia import Main
-Main.include("julia/myfunc.jl")
+# Main.include("julia/myfunc.jl")
+Main.include("myfunc.jl")
 jlmod = Main.MyJuliaModule
 
 def square_from_julia(x):
@@ -11,10 +12,11 @@ def square_from_julia(x):
 
 def compute_gradients_and_loss_py(input_matrix):
     matrix = np.array(input_matrix, dtype=np.float64).tolist()
-    losses, grads = jlmod.compute_gradients_and_loss(matrix)
+    losses, grads, elapsed = jlmod.compute_gradients_and_loss(matrix)
     return {
         "losses": list(losses),
-        "gradients": [list(g) for g in grads]
+        "gradients": [list(g) for g in grads],
+        "elapsed": float(elapsed)
     }
 
 # # Example test run

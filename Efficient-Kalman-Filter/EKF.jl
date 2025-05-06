@@ -79,12 +79,12 @@ function NM(
     n_c, n_p, n_s, n_t, n_u, n_x, n_z_t,
     AAll, BAll, DAll, GAll,
     firstDates, tradeDates, ecbRatechangeDates, T0All, TAll,
-    a0_0::AbstractArray{Float64},
-    Σx_0::AbstractArray{Float64},
-    Σw_0::AbstractArray{Float64},
-    Σv_0::AbstractArray{Float64},
-    θF_0::AbstractArray{Float64},
-    θg_0::AbstractArray{Float64};
+    a0_0::AbstractArray{<:AbstractFloat},
+    Σx_0::AbstractArray{<:AbstractFloat},
+    Σw_0::AbstractArray{<:AbstractFloat},
+    Σv_0::AbstractArray{<:AbstractFloat},
+    θF_0::AbstractArray{<:AbstractFloat},
+    θg_0::AbstractArray{<:AbstractFloat};
     tol::Float64=1e-6,
     maxiter::Int=10,
     verbose::Bool=false,
@@ -121,20 +121,29 @@ function NM(
     # unpack helper
     function psi_to_parameters(ψ, θg_bool)
         idx = 1
-        
-        θF  = ψ[idx:idx+len_F-1]
-        a0  = ψ[idx:idx+len_a0-1]; idx += len_a0
-        Σx  = reshape(ψ[idx:idx+len_Sx-1], size(Σx_0)); idx += len_Sx
-        Σw  = reshape(ψ[idx:idx+len_Sw-1], size(Σw_0)); idx += len_Sw
-        Σv  = reshape(ψ[idx:idx+len_Sv-1], size(Σv_0)); idx += len_Sv
-        if (θg_bool)
-            θg  = reshape(g_flat, shape_g)
+      
+        # initial state
+        a0 = ψ[idx:idx+len_a0-1];                     idx += len_a0
+      
+        # Σx, Σw, Σv
+        Σx = reshape(ψ[idx:idx+len_Sx-1], size(Σx_0)); idx += len_Sx
+        Σw = reshape(ψ[idx:idx+len_Sw-1], size(Σw_0)); idx += len_Sw
+        Σv = reshape(ψ[idx:idx+len_Sv-1], size(Σv_0)); idx += len_Sv
+      
+        # θg if requested
+        if θg_bool
+          θg_flat = ψ[idx:idx+len_g-1];                idx += len_g
+          θg      = reshape(θg_flat, shape_g)
         else
-            θg  = θg_0 
+          θg = θg_0
         end
-        θF  = ψ[idx:idx+len_F-1]
+      
+        # finally θF
+        θF = ψ[idx:idx+len_F-1]
+      
         return a0, Σx, Σw, Σv, θF, θg
-    end
+      end
+      
 
     # objective: negative log‐likelihood (filter only)
     fobj = function(ψ)

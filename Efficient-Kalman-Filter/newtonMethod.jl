@@ -6,24 +6,23 @@ using ReverseDiff, LinearAlgebra, Optim, LineSearches, ForwardDiff
 export newtonStep, newtonOptimize, newtonOptimizeBroyden
 
 # === Build compiled tapes for gradient & Hessian ===
-    function setup_tapes(f::Function, ψ0::AbstractVector{<:Float64})
+    function setup_tapes(f::Function, ψ0::AbstractVector{<:AbstractFloat})
         println("→ Building gradient tape…")
         grad_tape = ReverseDiff.GradientTape(f, ψ0)
         println("→ Compiling gradient tape…")
         ReverseDiff.compile(grad_tape)
-        # println("→ Building Hessian tape…")
-        # hess_tape = ReverseDiff.HessianTape(f, ψ0)
-        # println("→ Compiling Hessian tape…")
-        # ReverseDiff.compile(hess_tape)
-        # println("→ Done compiling tapes.")
-        hess_tape = 0
+        println("→ Building Hessian tape…")
+        hess_tape = ReverseDiff.HessianTape(f, ψ0)
+        println("→ Compiling Hessian tape…")
+        ForwardDiff.compile(hess_tape)
+        println("→ Done compiling tapes.")
         return grad_tape, hess_tape
       end
       
 
 # === One Newton step, with Armijo backtracking ===
 function newtonStep(f, grad_tape, hess_tape,
-                    ψ::AbstractVector{<:Float64};
+                    ψ::AbstractVector{<:AbstractFloat};
                     α::Float64=1e-4,
                     s0::Float64=1.0,
                     s_min::Float64=1e-8,
@@ -35,9 +34,8 @@ function newtonStep(f, grad_tape, hess_tape,
     ReverseDiff.gradient!(g, grad_tape, ψ)
 
     # 2) Hessian
-    # H = zeros(n, n)
-    # ReverseDiff.hessian!(H, hess_tape, ψ)
-    H = ForwardDiff.hessian(f, ψ)
+    H = zeros(n, n)
+    ForwardDiff.hessian!(H, hess_tape, ψ)
 
     # 3) Newton direction Δψ = −H⁻¹ g
     Δψ = - H \ g
@@ -58,7 +56,7 @@ function newtonStep(f, grad_tape, hess_tape,
 end
 
 # === Full Newton optimizer ===
-function newtonOptimize(f, ψ₀::AbstractVector{<:Float64};
+function newtonOptimize(f, ψ₀::AbstractVector{<:AbstractFloat};
                         tol::Float64=1e-4,
                         maxiter::Int=5,
                         verbose::Bool=false)

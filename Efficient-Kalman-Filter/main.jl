@@ -17,14 +17,26 @@ using .pricingFunctions
 # Clears terminal
 clear() = print("\e[2J\e[H")
 
-# Load full data
-data = loadData.run()
-
 # Split data: p% in-sample, (1-p)% out-of-sample
-p = 0.1
-split = loadData.split_data(data, p)
-data_insample = split.insample
-data_outsample = split.outsample
+p = 0.01
+
+Float32_bool = false
+
+if (!Float32_bool)
+    # load as Float64 
+    println("Data in Float64")
+    data = loadData.run("Efficient-Kalman-Filter/Data")               # Float64 data
+    split = loadData.split_data(data, p)
+    data_insample = split.insample
+    data_outsample = split.outsample
+else
+    # load as Float32
+    println("Data in Float32")
+    data = loadData.run("Efficient-Kalman-Filter/Data"; T=Float32)   # Float32 data
+    split = loadData.split_data(data, p)
+    data_insample = split.insample
+    data_outsample = split.outsample
+end
 
 # Run Filter
 x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll = EKF.kalman_filter_smoother_lag1(
@@ -92,7 +104,7 @@ a0_NM, Σx_NM, Σw_NM, Σv_NM, θF_NM, θg_NM =
     maxiter=3,
     verbose=true,
     Newton_bool=false, #Determines if Newton then true otherwise Broyden
-    θg_bool=false,  #Detemines if too include theta_g
+    θg_bool=true,  #Detemines if too include theta_g
   )
   println("NM - Kalman Done")
 

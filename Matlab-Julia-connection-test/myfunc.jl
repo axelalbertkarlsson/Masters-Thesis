@@ -15,13 +15,15 @@ function compute_gradients_and_loss(input_matrix::Matrix{Float64})
     gradients = zeros(n_rows, n_cols)
     losses = zeros(n_rows)
 
-    for i in 1:n_rows
-        x = vec(input_matrix[i, :])
-        losses[i] = f(x)
-        gradients[i, :] = Zygote.gradient(f, x)[1]
+    elapsed = @elapsed begin
+        for i in 1:n_rows
+            x = vec(input_matrix[i, :])
+            losses[i] = f(x)
+            gradients[i, :] = Zygote.gradient(f, x)[1]
+        end
     end
 
-    return (losses, gradients)
+    return (losses, gradients, elapsed)
 end
 
 end # module
