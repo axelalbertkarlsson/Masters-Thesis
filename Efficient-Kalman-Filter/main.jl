@@ -18,7 +18,7 @@ using .pricingFunctions
 clear() = print("\e[2J\e[H")
 
 # Split data: p% in-sample, (1-p)% out-of-sample
-p = 0.01
+p = 0.001
 
 Float32_bool = false
 
@@ -101,10 +101,11 @@ a0_NM, Σx_NM, Σw_NM, Σv_NM, θF_NM, θg_NM =
     data_insample.theta_F,        # Vector
     data_insample.theta_g;        # Matrix
     tol=1e-6,
-    maxiter=3,
+    maxiter=1000,
     verbose=true,
-    Newton_bool=false, #Determines if Newton then true otherwise Broyden
-    θg_bool=true,  #Detemines if too include theta_g
+    Newton_bool=false, #Determines if Newton then true 
+    HF_bool=false, #Determines if Newton
+    θg_bool=false,  #Detemines if too include theta_g
   )
   println("NM - Kalman Done")
 
