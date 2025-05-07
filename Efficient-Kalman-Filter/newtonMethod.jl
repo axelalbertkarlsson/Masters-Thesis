@@ -59,35 +59,42 @@ function newtonOptimizeHF(f, ψ₀::Vector{Float64};
     ψ = copy(ψ₀)
     n = length(ψ)
 
-    # Quick sanity check
-    f0   = f(ψ)
-    g0   = ForwardDiff.gradient(f, ψ)
+    f0 = f(ψ)
+    g0 = ForwardDiff.gradient(f, ψ)
+
+    if any(!isfinite, g0)
+        @warn "Initial gradient contains NaNs or Infs"
+        return ψ₀
+    end
+
     println("Sanity HF @ ψ₀ → f = $f0, ‖g‖ = $(norm(g0))")
 
     for k in 1:maxiter
-        # 1) gradient via ForwardDiff
         g = ForwardDiff.gradient(f, ψ)
+        @assert all(isfinite, g) "∇f contains non‐finite entries at iteration $k: indices = $(findall(!isfinite, g))"
+        if any(!isfinite, g)
+            @warn "Gradient became non-finite at iter $k"
+            break
+        end
 
-        # 2) finite-difference Hessian-vector product
         ε = eps(Float64)^(1/3)
         grad_tape = ReverseDiff.GradientTape(f, ψ)
         ReverseDiff.compile(grad_tape)
+
         Hlin = LinearMap{Float64}((v,out)->begin
             gp = similar(out); ReverseDiff.gradient!(gp, grad_tape, ψ .+ ε .* v)
             gm = similar(out); ReverseDiff.gradient!(gm, grad_tape, ψ .- ε .* v)
             @. out = (gp - gm)/(2ε)
         end, n, n; ismutating=true)
 
-        # 3) CG solve H Δψ = -g
         Δψ, _ = cg(Hlin, -g; abstol=tol, maxiter=50)
 
-        # guard against NaN or absurd steps
         if any(!isfinite, Δψ) || !isfinite(norm(Δψ)) || norm(Δψ) > 1e6
             @warn "HF produced invalid step (NaN or too large norm=$(norm(Δψ))); aborting HF."
             break
         end
 
-        # 4) robust backtracking on f
+        # Backtracking
         found_good_step = false
         s = 1.0
         base = f(ψ)
@@ -95,12 +102,11 @@ function newtonOptimizeHF(f, ψ₀::Vector{Float64};
             candidate = ψ .+ s .* Δψ
             ftrial = f(candidate)
             if isfinite(ftrial) && ftrial < base
-                found_good_step = true
                 ψ .= candidate
+                found_good_step = true
                 break
-            else
-                s *= 0.5
             end
+            s *= 0.5
         end
 
         if !found_good_step
@@ -110,7 +116,6 @@ function newtonOptimizeHF(f, ψ₀::Vector{Float64};
 
         verbose && println(" HF iter $k → ‖Δψ‖=$(norm(Δψ)), step=$s, f=$(f(ψ))")
 
-        # convergence check
         if norm(Δψ) < tol
             verbose && println(" HF converged at iter $k (‖Δψ‖=$(norm(Δψ)))")
             break
@@ -119,6 +124,7 @@ function newtonOptimizeHF(f, ψ₀::Vector{Float64};
 
     return ψ
 end
+
 
 
 # ———————————————————————————————————————————————————————————————————————
@@ -166,6 +172,53 @@ function newtonOptimizeBroyden(f, ψ₀; tol=1e-6, maxiter=10, verbose=false)
     @info "Final objective" f_min=Optim.minimum(res)
 
     return Optim.minimizer(res)
+end
+
+""" Shitty ass newton, should not be used.
+    newton_krylov(fobj, ψ0;
+                  tol=1e-6,
+                  maxiter=10,
+                  cg_tol=1e-2,
+                  cg_maxiter=50)
+
+Newton’s method with a (finite‐difference) Krylov–CG solve of the Hessian system:
+
+1. g = ∇f(ψ) via ReverseDiff
+2. Hmv(v) ≈ (∇f(ψ + δ·v) – g)/δ  with δ = √eps()
+3. Wrap Hmv in a LinearMap
+4. d,stats = cg(Hmap, –g; abstol=cg_tol, reltol=0.0, maxiter=cg_maxiter)
+5. ψ ← ψ + d
+"""
+function newton_krylov(fobj, ψ0; tol=1e-6, maxiter=10, cg_tol=1e-2, cg_maxiter=50)
+    ψ = copy(ψ0)
+    n = length(ψ)
+    δ = sqrt(eps(Float64))
+
+    for it in 1:maxiter
+        # 1) gradient via ReverseDiff
+        g = ReverseDiff.gradient(fobj, ψ)
+        ng = norm(g)
+        if ng < tol
+            println("→ Converged at iter $it with ‖g‖ = $ng")
+            return ψ
+        end
+
+        # 2) finite-difference Hessian-vector product
+        Hmv = v -> (ReverseDiff.gradient(fobj, ψ .+ δ .* v) .- g) ./ δ
+
+        # 3) wrap in a LinearMap
+        Hmap = LinearMap(Hmv, n, n; issymmetric=true)
+
+        # 4) approximately solve H d = –g
+        d, stats = cg(Hmap, -g; abstol=cg_tol, reltol=0.0, maxiter=cg_maxiter)
+
+        # 5) update
+        ψ .+= d
+        println("→ Newton $it: ‖g‖=$(round(ng,4)), ‖Δψ‖=$(round(norm(d),4)), CG its=$(stats.iter)")
+    end
+
+    @warn "→ Hit maxiter without convergence (final ‖g‖ = $(norm(ReverseDiff.gradient(fobj, ψ))))"
+    return ψ
 end
 
 end # module
