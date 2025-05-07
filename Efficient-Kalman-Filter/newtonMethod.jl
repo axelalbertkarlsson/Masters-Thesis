@@ -2,9 +2,11 @@
 
 module newtonMethod
 
-using ReverseDiff, LinearAlgebra, IterativeSolvers, LinearMaps, ForwardDiff, Optim, LineSearches
+using ReverseDiff, LinearAlgebra, LinearMaps, ForwardDiff, Optim, LineSearches, ProgressMeter, Dates, Printf
+#using Optim: value, gradient, minimizer
+using IterativeSolvers: cg
 
-export newtonStep, newtonOptimize, newtonOptimizeBroyden, newtonOptimizeHF
+export newtonStep, newtonOptimize, newtonOptimizeBroyden, newtonOptimizeHF, newton_krylov, newtonOptimizeOptim
 
 # ———————————————————————————————————————————————————————————————————————
 # Full Newton (unchanged)
@@ -131,48 +133,52 @@ end
 function newtonOptimizeBroyden(f, ψ₀; tol=1e-6, maxiter=10, verbose=false)
     @info "Starting BFGS optimization" tol=tol maxiter=maxiter
 
-    # 1) Build & compile tape
-    tape = ReverseDiff.GradientTape(f, ψ₀)
+    # — wrap original objective to guard against Infs/NaNs —
+    safe_f = x -> begin
+        val = try
+            f(x)
+        catch
+            Inf
+        end
+        return isfinite(val) ? val : typemax(Float64)
+    end
+
+    # 1) Build & compile tape on safe objective
+    tape = ReverseDiff.GradientTape(safe_f, ψ₀)
     @info "Compiling ReverseDiff gradient tape…"
     ReverseDiff.compile(tape)
 
     # 2) Mutating gradient! for Optim.jl
     function gradient!(g::AbstractVector, x::AbstractVector)
-        # g is pre-allocated by Optim.jl
         ReverseDiff.gradient!(g, tape, x)
         return g
     end
 
-    # 3) Optim options
-    # opts = Optim.Options(
-    #   g_tol      = tol,
-    #   iterations = maxiter,
-    #   show_trace = verbose,
-    #   store_trace= verbose
-    # )
-    opts = Optim.Options(g_tol=tol,
-                          iterations=maxiter,
-                          show_trace=verbose)
+    # 3) Optim options, keep printing behavior
+    opts = Optim.Options(
+        g_tol      = tol,
+        iterations = maxiter,
+        show_trace = verbose,
+        store_trace= verbose
+    )
 
-    # build a BFGS optimizer that uses plain backtracking
-    bt = LineSearches.BackTracking()
+    # 4) Build LBFGS with backtracking
     method = Optim.LBFGS(linesearch = LineSearches.BackTracking(), m=20)
 
-    res = optimize(f, gradient!, ψ₀, method, opts)
+    # 5) Run optimization on safe objective
+    res = optimize(safe_f, gradient!, ψ₀, method, opts)
 
-    # 4) Run BFGS (opts must be positional arg #5)
-    # res = optimize(f, gradient!, ψ₀, BFGS(), opts)
-
-    # 5) Report
+    # 6) Report
     if Optim.converged(res)
         @info "BFGS converged in $(res.iterations) steps"
     else
         @warn "BFGS did NOT converge" status=res
     end
-    @info "Final objective" f_min=Optim.minimum(res)
+    @info "Final objective (safe) = $(Optim.minimum(res))"
 
     return Optim.minimizer(res)
 end
+
 
 """ Shitty ass newton, should not be used.
     newton_krylov(fobj, ψ0;
@@ -212,13 +218,44 @@ function newton_krylov(fobj, ψ0; tol=1e-6, maxiter=10, cg_tol=1e-2, cg_maxiter=
         # 4) approximately solve H d = –g
         d, stats = cg(Hmap, -g; abstol=cg_tol, reltol=0.0, maxiter=cg_maxiter)
 
+        its = if stats isa Number
+            Int(round(stats))
+        elseif hasproperty(stats, :iter)
+            stats.iter
+        else
+            -1
+        end
         # 5) update
         ψ .+= d
-        println("→ Newton $it: ‖g‖=$(round(ng,4)), ‖Δψ‖=$(round(norm(d),4)), CG its=$(stats.iter)")
+        @printf("→ Newton %2d: ‖g‖=%.6f   ‖Δψ‖=%.6f   CG its=%d\n",
+                it, ng, norm(d), its)
     end
 
     @warn "→ Hit maxiter without convergence (final ‖g‖ = $(norm(ReverseDiff.gradient(fobj, ψ))))"
     return ψ
 end
+
+
+
+# (your existing newtonOptimize, newtonOptimizeBroyden go here…)
+
+"""
+    newtonOptimizeOptim(fobj, x0; tol, maxiter)
+
+Run Optim.Newton on fobj starting at x0 with forward‐mode Hessian,
+printing timing, trace, etc., then return the minimizer.
+"""
+
+function newtonOptimizeOptim(fobj, x0; tol=1e-6, maxiter=10)
+    # precompute gradient & Hessian so you’re sure they’re working
+    @time _ = ReverseDiff.gradient(fobj, x0)
+    @time _ = ForwardDiff.hessian(fobj, x0)
+    td   = TwiceDifferentiable(fobj, x0; autodiff = :forward, inplace = true)
+    opts = Optim.Options(g_tol=tol, iterations=maxiter)
+    res  = optimize(td, x0, Newton(), opts)
+    return Optim.minimizer(res)
+end
+
+
 
 end # module

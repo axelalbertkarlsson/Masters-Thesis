@@ -1,7 +1,7 @@
 #EKF.jl
 module EKF
 
-using LinearAlgebra, ProgressMeter, Dates, Optim
+using LinearAlgebra, ProgressMeter, Dates, Optim, Printf
 using ReverseDiff
 using ForwardDiff
 using LinearMaps
@@ -198,9 +198,19 @@ function kalman_filter_smoother_lag1(zAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p,
     return x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll
 end
 
+function _safe_solve(S, ε)
+    try
+        return S \ ε
+    catch err
+        @warn "direct solve failed, falling back to pinv" exception=err
+        return pinv(Matrix(S)) * ε
+    end
+ end
+
 function safeS(H, P, R)
     S = 0.5*(H*P*H' + R + (H*P*H' + R)')   # symmetrize in one go
-    δ = eps(eltype(S)) * tr(S)
+    #δ = eps(eltype(S)) * tr(S)
+    δ = max(eps(eltype(S)) * tr(S), one(eltype(S))*1e-6)
     return S + δ * I(size(S,1))
 end
 
@@ -211,24 +221,23 @@ function NM(
     AAll, BAll, DAll, GAll,
     firstDates, tradeDates, ecbRatechangeDates, T0All, TAll,
     a0_0, Σx_0, Σw_0, Σv_0, θF_0, θg_0;
-    tol=1e-6, maxiter=10, verbose=false,
-    θg_bool=false, chooser=1
+    tol::Real=1e-6, maxiter::Int=10, verbose::Bool=false,
+    θg_bool::Bool=false, chooser::Int=1, segmented::Bool=false
 )
-    # — dimension constants —
+
+    # — dimension constants & pack initial ψ₀ via Cholesky reparam —
     n_x    = size(Σx_0,1)
     m_w    = size(Σw_0,1)
     p_v    = size(Σv_0,1)
     r_g    = θg_bool ? length(vec(θg_0)) : 0
     len_a0 = length(a0_0)
     len_F  = length(θF_0)
-
     len_Lx = n_x*(n_x+1) ÷ 2
     len_Lw = m_w*(m_w+1) ÷ 2
     len_Lv = p_v*(p_v+1) ÷ 2
-    total_expected = len_a0 + len_Lx + len_Lw + len_Lv + r_g + len_F
-    println("Expected ψ length = $total_expected")
 
-    # — pack initial ψ₀ via Cholesky reparam —
+    println("Expected ψ length = $(len_a0 + len_Lx + len_Lw + len_Lv + r_g + len_F)")
+
     ψ0 = Float64[]
     append!(ψ0, vec(a0_0))
     function push_chol!(M, n)
@@ -245,7 +254,6 @@ function NM(
     push_chol!(Σv_0, p_v)
     θg_bool && append!(ψ0, vec(θg_0))
     append!(ψ0, vec(log.(θF_0 .+ 1e-6)))
-
     println("Initial ψ₀ length = $(length(ψ0))")
 
     # — allocate filtering buffers once —
@@ -256,7 +264,6 @@ function NM(
 
     # — the negative‐log‐likelihood objective —
     fobj = function(ψ)
-        # detect whether this is a “real” Float run or a dual run
         FloatEl = Float64
         isdual = !(eltype(ψ) <: FloatEl)
 
@@ -266,12 +273,9 @@ function NM(
             Σx_0, Σw_0, Σv_0, θg_0
         )
 
-        # accumulator in the same element type as ψ
         neg2ℓ = zero(eltype(ψ))
 
-        #
         # — t = 1 —
-        #
         pred1     = θF .* (BAll[1] * a0)
         x_pred[1] = AAll[1] * pred1
 
@@ -295,9 +299,7 @@ function NM(
         x_filt_loc[1] = x_pred[1] + (P_pred[1] * H1') * (S1 \ ε1)
         P_filt_loc[1] = (I - (P_pred[1] * H1') * (S1 \ H1)) * P_pred[1]
 
-        #
-        # — t = 2:n_t with throttled prints & progress bar —
-        #
+        # — t = 2:n_t with prints & progress bar —
         if !isdual
             println("\n→ Starting filtering loop for t = 2:$n_t")
         end
@@ -342,75 +344,92 @@ function NM(
         return 0.5 * neg2ℓ
     end
 
-    chooser = 4
-    if (chooser == 1) #Krylov Newton
-        println("⇢ Running Krylov‐based Newton–CG…")
-        ψ_opt = newton_krylov(fobj, ψ0;
-        tol=tol,
-        maxiter=maxiter,
-        cg_tol=1e-2,
-        cg_maxiter=min(50, length(ψ0)))
+    # — build block ranges in ψ — 
+    idx    = 1
+    a0_idx = idx:(idx+len_a0-1);    idx += len_a0
+    Lx_idx = idx:(idx+len_Lx-1);    idx += len_Lx
+    Lw_idx = idx:(idx+len_Lw-1);    idx += len_Lw
+    Lv_idx = idx:(idx+len_Lv-1);    idx += len_Lv
+    θg_idx = θg_bool ? (idx:(idx+r_g-1)) : Int[];  idx += θg_bool ? r_g : 0
+    θF_idx = idx:(idx+len_F-1)
 
-    elseif (chooser == 2) # Built in Newton
-            println("⏱ Testing gradient and Hessian manually before optimize...")
+    blocks = [a0_idx, Lx_idx, Lw_idx, Lv_idx]
+    θg_bool && push!(blocks, θg_idx)
+    push!(blocks, θF_idx)
 
-            @time begin
-                g = ReverseDiff.gradient(fobj, ψ0)
-                println("✔ Gradient done. ‖g‖ = $(norm(g))")
-            end
+    # names for each block, in the same order
+    block_names = ["a0", "Lx", "Lw", "Lv"]
+    θg_bool && push!(block_names, "θg")
+    push!(block_names, "θF")
 
-            @time begin
-                H = ForwardDiff.hessian(fobj, ψ0)
-                println("✔ Hessian done. ‖H‖ = $(norm(H))")
-            end
+    function optimize_block!(ψf::Vector{Float64}, idxs, block_name)
+        x0 = ψf[idxs]
+        block_obj = x -> begin
+            T = typeof(x[1])
+            tmp = convert.(T, ψf)
+            tmp[idxs] = x
+            return fobj(tmp)
+        end
 
-            println("⏱ Pre-compiling ForwardDiff tape for fobj …")
-            ForwardDiff.compile(fobj, ψ0)
-            println("✔ Tape compiled.")
+        if chooser == 1
+            @time ψ_block = newton_krylov(block_obj, x0;
+                                    tol=tol,
+                                    maxiter=maxiter,
+                                    cg_tol=1e-2,
+                                    cg_maxiter=maxiter)
+        elseif chooser == 2
+            @time ψ_block = newtonOptimizeOptim(block_obj, x0; tol=tol, maxiter=maxiter)
+        elseif chooser == 3
+            @time ψ_block = newtonOptimize(block_obj, x0; tol=tol, maxiter=maxiter, verbose=verbose)
+        elseif chooser == 4
+            @time ψ_block = newtonOptimizeBroyden(block_obj, x0; tol=tol, maxiter=maxiter, verbose=verbose)
+        elseif chooser == 5
+            @time ψ_block = newtonOptimizeHF(block_obj, x0; tol=tol, maxiter=maxiter, verbose=verbose)
+        end
 
-            td  = TwiceDifferentiable(fobj, ψ0; autodiff = :forward, inplace = true)
-            newt = Newton()
-
-            lastx = copy(ψ0)
-            count = 0
-            cb = function(state)
-                count += 1
-                fval  = value(state)
-                gnorm = norm(gradient(state))
-                x     = minimizer(state)
-                Δψ    = x .- lastx
-                copy!(lastx, x)
-                println("→ it=$count   f=$(round(fval,6))   ‖g‖=$(round(gnorm,3))   ‖Δψ‖=$(round(norm(Δψ),3))")
-                return false
-            end
-
-            opts = Optim.Options(
-                show_trace  = true,
-                g_tol       = tol,
-                iterations  = maxiter,
-                callback    = cb,
-                store_trace = true
-            )
-
-            println("⇢ Starting full-Newton with Optim.Newton…")
-            res = optimize(td, ψ0, newt, opts)
-            println("\n⇢ Done. converged=$(converged(res)), iters=$(iterations(res))")
-
-            ψ_opt = minimizer(res)
-            println("⇢ final ‖ψ‖=$(round(norm(ψ_opt),3)), final ‖∇f‖=$(round(norm(ForwardDiff.gradient(fobj,ψ_opt)),3))")
-
-            for (i, s) in enumerate(res.trace)
-                println("Trace it=$i: f=$(value(s)) ‖g‖=$(norm(gradient(s)))")
-            end
-
-        elseif (chooser == 3) # Own Newton Method
-            ψ_opt = newtonOptimize(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
-        elseif (chooser == 4) # Broyden Method
-            ψ_opt = newtonOptimizeBroyden(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
+        ψf[idxs] = Float64.(ψ_block)
     end
 
-
-
+    if segmented
+        ψ = copy(ψ0)
+        println("⇢ segmented block optimization (chooser=$chooser)")
+        for pass in 1:maxiter
+            total_move = 0.0
+            println("→ pass $pass")
+            for (blk, name) in zip(blocks, block_names)
+                old = ψ[blk]
+                println("   • optimizing block `$name` (length=$(length(blk))) …")
+                elapsed = @elapsed optimize_block!(ψ, blk, name)
+                # format time with Printf instead of round(...)
+                fmt_time = @sprintf("%.3f", elapsed)
+                movement = norm(ψ[blk] .- old)
+                println("     → `$name` done in $fmt_time s; movement $movement")
+                total_move += movement
+            end
+            println("→ total movement = $total_move")
+            if total_move < tol
+                println("→ converged after $pass passes")
+                break
+            end
+        end
+        ψ_opt = ψ
+    else
+        println("⇢ full‐vector optimizer chooser=$chooser")
+        if chooser == 1
+            ψ_opt = newton_krylov(fobj, ψ0; tol=tol, maxiter=maxiter,
+                                  cg_tol=1e-2, cg_maxiter=min(50,length(ψ0)))
+        elseif chooser == 2
+            ψ_opt = newtonOptimizeOptim(fobj, ψ0; tol=tol, maxiter=maxiter)
+        elseif chooser == 3
+            ψ_opt = newtonOptimize(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
+        elseif chooser == 4
+            ψ_opt = newtonOptimizeBroyden(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
+        elseif chooser == 5
+            ψ_opt = newtonOptimizeHF(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
+        else
+            error("Unknown chooser: $chooser")
+        end
+    end
 
     # — final unpack & smoothing —
     a0_opt, Σx_opt, Σw_opt, Σv_opt, θF_opt, θg_opt = psi_to_parameters(

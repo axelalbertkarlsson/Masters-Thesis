@@ -18,7 +18,7 @@ using .pricingFunctions
 clear() = print("\e[2J\e[H")
 
 # Split data: p% in-sample, (1-p)% out-of-sample
-p = 0.8
+p = 0.001
 
 Float32_bool = false
 
@@ -58,7 +58,8 @@ x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll = EKF.kalman_filter_smooth
     data_insample.G_t,
     data_insample.Sigma_w,
     data_insample.Sigma_v,
-    vec(data_insample.a_x),
+    #vec(data_insample.a_x),
+    vec(Float64.(zeros(Int(data_insample.n_x),1))),
     data_insample.Sigma_x,
     vec(data_insample.theta_F),
     data_insample.theta_g,
@@ -69,6 +70,7 @@ x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll = EKF.kalman_filter_smooth
     data_insample.TAll
  )
 println("Regular - Kalman Done")
+
  #Newton Method
 x_filt_NM, P_filt_NM, x_smooth_NM, P_smooth_NM, P_lag_NM, oAll_NM, EAll_NM,
 a0_NM, Σx_NM, Σw_NM, Σv_NM, θF_NM, θg_NM =
@@ -94,19 +96,25 @@ a0_NM, Σx_NM, Σw_NM, Σv_NM, θF_NM, θg_NM =
     data_insample.ecbRatechangeDates,
     data_insample.T0All,
     data_insample.TAll,
-    data_insample.a_x,            # Vector
+    #vec(data_insample.a_x),
+    vec(Float64.(zeros(Int(data_insample.n_x),1))),
     data_insample.Sigma_x,        # Matrix
     data_insample.Sigma_w,        # Matrix
     data_insample.Sigma_v,        # Matrix
     data_insample.theta_F,        # Vector
     data_insample.theta_g;        # Matrix
     tol=1e-2,
-    maxiter=50,
+    maxiter=2,
     verbose=true,
-    θg_bool=false,  #Detemines if too include theta_g
-    chooser=2, #Chooses which optimizer
-    #segmented=true # If true then piecewise psi opti
+    θg_bool=false,  # Detemines if too include theta_g
+    chooser=5,      # Chooses which optimizer 
+    segmented=false  # If true then piecewise psi opti
   )
+  #Segmented true
+  #(Order of fastest (chooser): 1, 4, 2, 5, 3) #5 give NaN
+  #Segmented false
+  #(Order of fastest (chooser): 4, 5, 2, 1, 3) #5 give NaN
+
   println("NM - Kalman Done")
 
 # Calculate Forward Rates and Repricing
