@@ -1,7 +1,13 @@
 #EKF.jl
 module EKF
 
-using LinearAlgebra
+using LinearAlgebra, ProgressMeter, Dates, Optim
+using ReverseDiff
+using ForwardDiff
+using LinearMaps
+using IterativeSolvers: cg
+
+
 
 include("pricingFunctions.jl")
 include("newtonMethod.jl")
@@ -70,6 +76,10 @@ end
 Σx = symmetrize_and_jitter(Lx * Lx')
 @assert isposdef(Σx)   "Σx is still not numerically SPD"
 @assert all(isfinite, Σx) "Σx contains non-finite entries"
+if Treal==Float64
+    λmin = minimum(eigvals(Σx))
+    @assert λmin > 1e-12 "Σx nearly singular (min eig = $λmin)"
+end
 
 # 3) Σw
 Lw = zeros(Treal, m_w, m_w)
@@ -82,6 +92,10 @@ end
 Σw = symmetrize_and_jitter(Lw * Lw')
 @assert isposdef(Σw)   "Σw is still not numerically SPD"
 @assert all(isfinite, Σw) "Σw contains non-finite entries"
+if Treal==Float64
+    λmin = minimum(eigvals(Σw))
+    @assert λmin > 1e-12 "Σw nearly singular (min eig = $λmin)"
+end
 
 # 4) Σv
 Lv = zeros(Treal, p_v, p_v)
@@ -94,6 +108,11 @@ end
 Σv = symmetrize_and_jitter(Lv * Lv')
 @assert isposdef(Σv)   "Σv is still not numerically SPD"
 @assert all(isfinite, Σv) "Σv contains non-finite entries"
+if Treal==Float64
+    λmin = minimum(eigvals(Σv))
+    @assert λmin > 1e-12 "Σv nearly singular (min eig = $λmin)"
+end
+
 
 # 5) θg
 if θg_bool
@@ -107,6 +126,10 @@ end
 # last block of ψ is the log-θF entries
 logθF = ψ[idx:idx+len_F-1]
 θF    = exp.(logθF)  # back to the positive scale
+if Treal==Float64
+    θmin = minimum(θF)
+    @assert θmin > 1e-6 "θF entries too small (min θF = $θmin)"
+end
 
 return a0, Σx, Σw, Σv, θF, θg
 end
@@ -189,7 +212,7 @@ function NM(
     firstDates, tradeDates, ecbRatechangeDates, T0All, TAll,
     a0_0, Σx_0, Σw_0, Σv_0, θF_0, θg_0;
     tol=1e-6, maxiter=10, verbose=false,
-    Newton_bool=false, θg_bool=false, HF_bool=false
+    θg_bool=false, chooser=1
 )
     # — dimension constants —
     n_x    = size(Σx_0,1)
@@ -203,101 +226,195 @@ function NM(
     len_Lw = m_w*(m_w+1) ÷ 2
     len_Lv = p_v*(p_v+1) ÷ 2
     total_expected = len_a0 + len_Lx + len_Lw + len_Lv + r_g + len_F
-    println("EXPECTED ψ length = $total_expected")
+    println("Expected ψ length = $total_expected")
 
-    # — pack initial ψ0 via Cholesky reparam —
+    # — pack initial ψ₀ via Cholesky reparam —
     ψ0 = Float64[]
     append!(ψ0, vec(a0_0))
-    function push_chol!(M,n)
+    function push_chol!(M, n)
         L = cholesky(M).L
-        for i in 1:n; push!(ψ0, log(L[i,i])); end
-        for j in 1:n, i in (j+1):n; push!(ψ0, L[i,j]); end
+        for i in 1:n
+            push!(ψ0, log(L[i,i]))
+        end
+        for j in 1:n, i in (j+1):n
+            push!(ψ0, L[i,j])
+        end
     end
     push_chol!(Σx_0, n_x)
     push_chol!(Σw_0, m_w)
     push_chol!(Σv_0, p_v)
     θg_bool && append!(ψ0, vec(θg_0))
-    # replace raw θF with its log so that during optimization exp(·) always stays positive
-    ε = 1e-6
-    logθF₀ = log.(θF_0 .+ ε)      # avoids log(0)
-    append!(ψ0, vec(logθF₀))
+    append!(ψ0, vec(log.(θF_0 .+ 1e-6)))
 
-    println("Initial ψ₀ length = ", length(ψ0), "  (should be $total_expected)")
+    println("Initial ψ₀ length = $(length(ψ0))")
 
-    # — negative log‐likelihood with local jitter —
+    # — allocate filtering buffers once —
+    x_pred     = Vector{Any}(undef, n_t)
+    P_pred     = Vector{Any}(undef, n_t)
+    x_filt_loc = Vector{Any}(undef, n_t)
+    P_filt_loc = Vector{Any}(undef, n_t)
+
+    # — the negative‐log‐likelihood objective —
     fobj = function(ψ)
-        jitter = 1e-8
-        # unpack ψ → (a0, Σx, Σw, Σv, θF, θg)
+        # detect whether this is a “real” Float run or a dual run
+        FloatEl = Float64
+        isdual = !(eltype(ψ) <: FloatEl)
+
+        # unpack ψ → parameters
         a0, Σx, Σw, Σv, θF, θg = psi_to_parameters(
-            ψ, θg_bool,
-            len_a0, n_x, m_w, p_v, r_g, len_F,
+            ψ, θg_bool, len_a0, n_x, m_w, p_v, r_g, len_F,
             Σx_0, Σw_0, Σv_0, θg_0
         )
-        neg2ℓ = 0.0
-        x_pred     = Vector{Any}(undef, n_t)
-        P_pred     = Vector{Any}(undef, n_t)
-        x_filt_loc = Vector{Any}(undef, n_t)
-        P_filt_loc = Vector{Any}(undef, n_t)
 
-        # t = 1
-        x_pred[1] = AAll[1]*(θF .* (BAll[1]*a0))
-        W0 = (BAll[1]*Σx*BAll[1]') .* (θF*θF')
-        P_pred[1] = AAll[1]*W0*AAll[1]' + DAll[1]*Σw*DAll[1]'
-        o1,_ = calcO(firstDates[1], tradeDates[1], θg, ecbRatechangeDates,
-                     n_c, n_z_t[1], T0All[1], TAll[1])
-        H1,u1,_,_ = taylorApprox(o1, oIndAll[1], tcAll[1],
-                                 x_pred[1][1:n_s], I_z_t[1], n_z_t[1])                                                       
-        #S1 = H1*P_pred[1]*H1' + GAll[1]*Σv*GAll[1]'
-        S1 = safeS(H1, P_pred[1], GAll[1]*Σv*GAll[1]')
-        ε1 = vec(zAll[1]) - H1*x_pred[1] - u1
-        if !isposdef(S1) || any(!isfinite, S1) || any(!isfinite, ε1)
-            return Inf
+        # accumulator in the same element type as ψ
+        neg2ℓ = zero(eltype(ψ))
+
+        #
+        # — t = 1 —
+        #
+        pred1     = θF .* (BAll[1] * a0)
+        x_pred[1] = AAll[1] * pred1
+
+        W0        = (BAll[1] * Σx * BAll[1]') .* (θF * θF')
+        P_pred[1] = AAll[1] * W0 * AAll[1]' +
+                    DAll[1] * Σw * DAll[1]'
+
+        o1, _     = calcO(
+            firstDates[1], tradeDates[1], θg, ecbRatechangeDates,
+            n_c, n_z_t[1], T0All[1], TAll[1]
+        )
+        H1, u1, _, _ = taylorApprox(
+            o1, oIndAll[1], tcAll[1],
+            x_pred[1][1:n_s], I_z_t[1], n_z_t[1]
+        )
+
+        S1        = safeS(H1, P_pred[1], GAll[1] * Σv * GAll[1]')
+        ε1        = vec(zAll[1]) .- H1 * x_pred[1] .- u1
+        neg2ℓ    += logdet(S1) + dot(ε1, S1 \ ε1)
+
+        x_filt_loc[1] = x_pred[1] + (P_pred[1] * H1') * (S1 \ ε1)
+        P_filt_loc[1] = (I - (P_pred[1] * H1') * (S1 \ H1)) * P_pred[1]
+
+        #
+        # — t = 2:n_t with throttled prints & progress bar —
+        #
+        if !isdual
+            println("\n→ Starting filtering loop for t = 2:$n_t")
         end
-        neg2ℓ += logdet(S1) + dot(ε1, S1\ε1)
-        x_filt_loc[1] = x_pred[1] + (P_pred[1]*H1')*(S1\ε1)
-        P_filt_loc[1] = (I - (P_pred[1]*H1')*(S1\H1))*P_pred[1]
+        last_print = time()
 
-        # t = 2:T
-        for t in 2:n_t
-            x_pred[t] = AAll[t]*(θF .* (BAll[t]*x_filt_loc[t-1]))
-            Wt = (BAll[t]*P_filt_loc[t-1]*BAll[t]') .* (θF*θF')
-            P_pred[t] = AAll[t]*Wt*AAll[t]' + DAll[t]*Σw*DAll[t]'
-            o_t,_ = calcO(firstDates[t], tradeDates[t], θg,
-                          ecbRatechangeDates, n_c, n_z_t[t], T0All[t], TAll[t])
-            H_t,u_t,_,_ = taylorApprox(o_t, oIndAll[t], tcAll[t],
-                                       x_pred[t][1:n_s], I_z_t[t], n_z_t[t])
-            #S_t = H_t*P_pred[t]*H_t' + GAll[t]*Σv*GAll[t]'
-            S_t = safeS(H_t, P_pred[t], GAll[t]*Σv*GAll[t]')
-            ε = vec(zAll[t]) - H_t*x_pred[t] - u_t
-
-            if !isposdef(S_t) || any(!isfinite, S_t) || any(!isfinite, ε)
-                return Inf
+        @showprogress for t in 2:n_t
+            if !isdual && (time() - last_print > 2.0)
+                println("\n→ t = $t   partial neg2ℓ = ", neg2ℓ/2)
+                last_print = time()
             end
 
-            neg2ℓ += logdet(S_t) + dot(ε, S_t\ε)
-            x_filt_loc[t] = x_pred[t] + (P_pred[t]*H_t')*(S_t\ε)
-            P_filt_loc[t] = (I - (P_pred[t]*H_t')*(S_t\H_t))*P_pred[t]
+            # predict
+            pred_t     = θF .* (BAll[t] * x_filt_loc[t-1])
+            x_pred[t]  = AAll[t] * pred_t
+
+            # covariance predict
+            tmp        = BAll[t] * P_filt_loc[t-1] * BAll[t]'
+            Wt         = tmp .* (θF * θF')
+            P_pred[t]  = AAll[t] * Wt * AAll[t]' +
+                         DAll[t] * Σw * DAll[t]'
+
+            # update
+            o_t, _     = calcO(
+                firstDates[t], tradeDates[t], θg,
+                ecbRatechangeDates, n_c, n_z_t[t], T0All[t], TAll[t]
+            )
+            H_t, u_t, _, _ = taylorApprox(
+                o_t, oIndAll[t], tcAll[t],
+                x_pred[t][1:n_s], I_z_t[t], n_z_t[t]
+            )
+            S_t        = safeS(H_t, P_pred[t], GAll[t] * Σv * GAll[t]')
+            ε_t        = vec(zAll[t]) .- H_t * x_pred[t] .- u_t
+            neg2ℓ    += logdet(S_t) + dot(ε_t, S_t \ ε_t)
+
+            x_filt_loc[t] = x_pred[t] + (P_pred[t] * H_t') * (S_t \ ε_t)
+            P_filt_loc[t] = (I - (P_pred[t] * H_t') * (S_t \ H_t)) * P_pred[t]
         end
 
+        if !isdual
+            println("\n→ Exiting fobj with neg2ℓ = ", 0.5 * neg2ℓ)
+        end
         return 0.5 * neg2ℓ
     end
 
-    # — optimizer chooser —
-    if Newton_bool && HF_bool
-        ψ_opt = newtonOptimizeHF(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
-    elseif Newton_bool && !HF_bool
-        ψ_opt = newtonOptimize(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
-    else
-        ψ_opt = newtonOptimizeBroyden(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
+    chooser = 4
+    if (chooser == 1) #Krylov Newton
+        println("⇢ Running Krylov‐based Newton–CG…")
+        ψ_opt = newton_krylov(fobj, ψ0;
+        tol=tol,
+        maxiter=maxiter,
+        cg_tol=1e-2,
+        cg_maxiter=min(50, length(ψ0)))
+
+    elseif (chooser == 2) # Built in Newton
+            println("⏱ Testing gradient and Hessian manually before optimize...")
+
+            @time begin
+                g = ReverseDiff.gradient(fobj, ψ0)
+                println("✔ Gradient done. ‖g‖ = $(norm(g))")
+            end
+
+            @time begin
+                H = ForwardDiff.hessian(fobj, ψ0)
+                println("✔ Hessian done. ‖H‖ = $(norm(H))")
+            end
+
+            println("⏱ Pre-compiling ForwardDiff tape for fobj …")
+            ForwardDiff.compile(fobj, ψ0)
+            println("✔ Tape compiled.")
+
+            td  = TwiceDifferentiable(fobj, ψ0; autodiff = :forward, inplace = true)
+            newt = Newton()
+
+            lastx = copy(ψ0)
+            count = 0
+            cb = function(state)
+                count += 1
+                fval  = value(state)
+                gnorm = norm(gradient(state))
+                x     = minimizer(state)
+                Δψ    = x .- lastx
+                copy!(lastx, x)
+                println("→ it=$count   f=$(round(fval,6))   ‖g‖=$(round(gnorm,3))   ‖Δψ‖=$(round(norm(Δψ),3))")
+                return false
+            end
+
+            opts = Optim.Options(
+                show_trace  = true,
+                g_tol       = tol,
+                iterations  = maxiter,
+                callback    = cb,
+                store_trace = true
+            )
+
+            println("⇢ Starting full-Newton with Optim.Newton…")
+            res = optimize(td, ψ0, newt, opts)
+            println("\n⇢ Done. converged=$(converged(res)), iters=$(iterations(res))")
+
+            ψ_opt = minimizer(res)
+            println("⇢ final ‖ψ‖=$(round(norm(ψ_opt),3)), final ‖∇f‖=$(round(norm(ForwardDiff.gradient(fobj,ψ_opt)),3))")
+
+            for (i, s) in enumerate(res.trace)
+                println("Trace it=$i: f=$(value(s)) ‖g‖=$(norm(gradient(s)))")
+            end
+
+        elseif (chooser == 3) # Own Newton Method
+            ψ_opt = newtonOptimize(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
+        elseif (chooser == 4) # Broyden Method
+            ψ_opt = newtonOptimizeBroyden(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
     end
 
-    @assert length(ψ0) == total_expected "\
-ψ₀ length $(length(ψ0)) ≠ expected $total_expected" 
 
-    # — unpack & final smoother —
+
+
+    # — final unpack & smoothing —
     a0_opt, Σx_opt, Σw_opt, Σv_opt, θF_opt, θg_opt = psi_to_parameters(
-        ψ_opt, θg_bool,
-        len_a0, n_x, m_w, p_v, r_g, len_F,
+        ψ_opt, θg_bool, len_a0, n_x, m_w, p_v, r_g, len_F,
         Σx_0, Σw_0, Σv_0, θg_0
     )
 
@@ -310,4 +427,8 @@ function NM(
     )..., a0_opt, Σx_opt, Σw_opt, Σv_opt, θF_opt, θg_opt
 end
 
-end # module
+
+
+
+
+end # module EKF
