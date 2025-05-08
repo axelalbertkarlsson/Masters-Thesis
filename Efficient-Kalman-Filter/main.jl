@@ -14,6 +14,8 @@ using .newtonMethod
 using .loadData
 using .pricingFunctions
 
+# packages Revise, LinearAlgebra, Plots, DataFrames, CSV, Statistics, Printf, ProgressMeter, Dates, ReverseDiff, ForwardDiff, LinearMaps, IterativeSolvers, LineSearches, Optim, MAT
+
 # Clears terminal
 clear() = print("\e[2J\e[H")
 
