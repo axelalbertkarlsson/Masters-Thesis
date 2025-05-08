@@ -300,9 +300,9 @@ function NM(
         P_filt_loc[1] = (I - (P_pred[1] * H1') * (S1 \ H1)) * P_pred[1]
 
         # — t = 2:n_t with prints & progress bar —
-        if !isdual
-            println("\n→ Starting filtering loop for t = 2:$n_t")
-        end
+        # if !isdual
+        #     println("\n→ Starting filtering loop for t = 2:$n_t")
+        # end
         last_print = time()
 
         @showprogress for t in 2:n_t
@@ -338,9 +338,9 @@ function NM(
             P_filt_loc[t] = (I - (P_pred[t] * H_t') * (S_t \ H_t)) * P_pred[t]
         end
 
-        if !isdual
-            println("\n→ Exiting fobj with neg2ℓ = ", 0.5 * neg2ℓ)
-        end
+        # if !isdual
+        #     println("\n→ Exiting fobj with neg2ℓ = ", 0.5 * neg2ℓ)
+        # end
         return 0.5 * neg2ℓ
     end
 

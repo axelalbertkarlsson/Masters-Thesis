@@ -130,6 +130,60 @@ end
 
 
 # ———————————————————————————————————————————————————————————————————————
+# function newtonOptimizeBroyden(f, ψ₀; tol=1e-6, maxiter=10, verbose=false)
+#     @info "Starting BFGS optimization" tol=tol maxiter=maxiter
+
+#     safe_f(x) = try
+#         f(x)
+#     catch err
+#         isa(err, DomainError) ? Inf : rethrow(err)
+#     end
+
+#     @info "Building ReverseDiff gradient tape…"
+#     tape = ReverseDiff.GradientTape(safe_f, ψ₀)
+#     @info "→ Done building tape"
+
+#     @info "Compiling ReverseDiff gradient tape…"
+#     ReverseDiff.compile(tape)
+#     @info "→ Done compiling tape"
+
+#     gradient! = (g,x) -> (ReverseDiff.gradient!(g, tape, x); g)
+
+#     opts = Optim.Options(g_tol=tol,
+#                          iterations=maxiter,
+#                          show_trace=verbose,
+#                          store_trace=verbose)
+
+#     ## ——— CHOOSE YOUR LINE SEARCH ———
+#     # 1) Strong‐Wolfe (MoreThuente) — usually bolder than backtracking
+#     #method = Optim.LBFGS(linesearch = LineSearches.MoreThuente(), m = 20)
+
+#     # 2) Relaxed back-tracking — larger initial steps and gentler shrinkage
+#     # method = Optim.LBFGS(
+#     #     linesearch = LineSearches.BackTracking(
+#     #       order = 2,      # quadratic interpolation 
+#     #       α     = 1e-4,   # Armijo constant (smaller → bolder)
+#     #       β     = 0.8     # shrink factor (larger → bolder)
+#     #     ),
+#     #     m = 20
+#     # )
+
+#     # 3) Trust-region (never too timid, never too bold)
+#     method = Optim.NewtonTrustRegion()
+
+#     # run
+#     res = optimize(safe_f, gradient!, ψ₀, method, opts)
+
+#     if Optim.converged(res)
+#         @info "Broyden/BFGS converged in $(res.iterations) steps"
+#     else
+#         @warn "Broyden/BFGS did NOT converge" status = res
+#     end
+#     @info "Final objective = $(Optim.minimum(res))"
+
+#     return Optim.minimizer(res)
+# end
+
 function newtonOptimizeBroyden(f, ψ₀; tol=1e-6, maxiter=10, verbose=false)
     @info "Starting BFGS optimization" tol=tol maxiter=maxiter
 
@@ -179,7 +233,6 @@ function newtonOptimizeBroyden(f, ψ₀; tol=1e-6, maxiter=10, verbose=false)
     return Optim.minimizer(res)
 end
 
-
 """ Shitty ass newton, should not be used.
     newton_krylov(fobj, ψ0;
                   tol=1e-6,
@@ -200,17 +253,36 @@ function newton_krylov(fobj, ψ0; tol=1e-6, maxiter=10, cg_tol=1e-2, cg_maxiter=
     n = length(ψ)
     δ = sqrt(eps(Float64))
 
+    # ─── Build & compile the tape ONCE ───
+    @time grad_tape = ReverseDiff.GradientTape(fobj, ψ0)
+    @time ReverseDiff.compile(grad_tape)
+
     for it in 1:maxiter
-        # 1) gradient via ReverseDiff
-        g = ReverseDiff.gradient(fobj, ψ)
+        # # 1) gradient via ReverseDiff
+        # g = ReverseDiff.gradient(fobj, ψ)
+        # ng = norm(g)
+        # if ng < tol
+        #     println("→ Converged at iter $it with ‖g‖ = $ng")
+        #     return ψ
+        # end
+
+        # # 2) finite-difference Hessian-vector product
+        # Hmv = v -> (ReverseDiff.gradient(fobj, ψ .+ δ .* v) .- g) ./ δ
+        # 1) gradient via our precompiled tape
+        g = similar(ψ)
+        ReverseDiff.gradient!(g, grad_tape, ψ)
         ng = norm(g)
         if ng < tol
             println("→ Converged at iter $it with ‖g‖ = $ng")
             return ψ
         end
 
-        # 2) finite-difference Hessian-vector product
-        Hmv = v -> (ReverseDiff.gradient(fobj, ψ .+ δ .* v) .- g) ./ δ
+        # 2) Hessian-vector using the same tape
+        Hmv = v -> begin
+            gp = similar(g)
+            ReverseDiff.gradient!(gp, grad_tape, ψ .+ δ .* v)
+            @. (gp - g) / δ
+        end
 
         # 3) wrap in a LinearMap
         Hmap = LinearMap(Hmv, n, n; issymmetric=true)

@@ -1,4 +1,4 @@
-using Revise, LinearAlgebra, Plots, DataFrames, CSV, Statistics
+using Revise, LinearAlgebra, Plots, DataFrames, CSV, Statistics, Printf
 
 include("loadData.jl")
 include("pricingFunctions.jl")
@@ -18,7 +18,7 @@ using .pricingFunctions
 clear() = print("\e[2J\e[H")
 
 # Split data: p% in-sample, (1-p)% out-of-sample
-p = 0.001
+p = 0.005
 
 Float32_bool = false
 
@@ -103,12 +103,12 @@ a0_NM, Σx_NM, Σw_NM, Σv_NM, θF_NM, θg_NM =
     data_insample.Sigma_v,        # Matrix
     data_insample.theta_F,        # Vector
     data_insample.theta_g;        # Matrix
-    tol=1e-2,
-    maxiter=2,
+    tol=1e2,
+    maxiter=25,
     verbose=true,
-    θg_bool=false,  # Detemines if too include theta_g
-    chooser=5,      # Chooses which optimizer 
-    segmented=false  # If true then piecewise psi opti
+    θg_bool=true,  # Detemines if too include theta_g
+    chooser=1,      # Chooses which optimizer 
+    segmented=true  # If true then piecewise psi opti
   )
   #Segmented true
   #(Order of fastest (chooser): 1, 4, 2, 5, 3) #5 give NaN
@@ -216,3 +216,38 @@ display(plt1)
 println("Regular - Plot Done")
 display(plt2)
 println("NM - Plot Done")
+
+# === Print overall error metrics for both methods ===
+# 1) flatten into one long numeric vector
+all_reg = vcat([vec(x) for x in innovationAll]...)
+all_nm  = vcat([vec(x) for x in innovationAll_NM]...)
+
+# 2a) compute MSE
+mse_reg = mean(all_reg .^ 2)
+mse_nm  = mean(all_nm  .^ 2)
+
+# 2b) compute MAE
+mae_reg = mean(abs.(all_reg))
+mae_nm  = mean(abs.(all_nm))
+
+# 3) pretty-print with Printf
+println("--------------------------------------------------")
+@printf("MSE  (Regular EKF):           % .5e\n", mse_reg)
+@printf("MSE  (Newton-Method EKF):     % .5e\n", mse_nm)
+println()
+@printf("MAE  (Regular EKF):           % .5e\n", mae_reg)
+@printf("MAE  (Newton-Method EKF):     % .5e\n", mae_nm)
+println("--------------------------------------------------")
+
+# 4) compare and print which was better
+if mse_nm < mse_reg
+    println("⇒ Newton-Method EKF has lower MSE, so it fits better by MSE.")
+else
+    println("⇒ Regular EKF has lower MSE, so it fits better by MSE.")
+end
+
+if mae_nm < mae_reg
+    println("⇒ Newton-Method EKF has lower MAE, so it fits better by MAE.")
+else
+    println("⇒ Regular EKF has lower MAE, so it fits better by MAE.")
+end
