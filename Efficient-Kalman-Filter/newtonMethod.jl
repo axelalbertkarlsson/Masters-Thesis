@@ -2,11 +2,17 @@
 
 module newtonMethod
 
-using ReverseDiff, LinearAlgebra, LinearMaps, ForwardDiff, Optim, LineSearches, ProgressMeter, Dates, Printf
-#using Optim: value, gradient, minimizer
+# using ReverseDiff, LinearAlgebra, LinearMaps, ForwardDiff, Optim, LineSearches, ProgressMeter, Dates, Printf
+# #using Optim: value, gradient, minimizer
+# using IterativeSolvers: cg
+using ReverseDiff, LinearAlgebra, LinearMaps, ForwardDiff
+using Optim            # brings in Optim.*
+using LineSearches, ProgressMeter, Dates, Printf
 using IterativeSolvers: cg
 
-export newtonStep, newtonOptimize, newtonOptimizeBroyden, newtonOptimizeHF, newton_krylov, newtonOptimizeOptim
+import Optim: LBFGS, TwiceDifferentiable, optimize, Options
+
+export newtonStep, newtonOptimize, newtonOptimizeBroyden, newtonOptimizeHF, newton_krylov, newtonOptimizeOptim, newtonOptimizeOptim_forward
 
 # ———————————————————————————————————————————————————————————————————————
 # Full Newton (unchanged)
@@ -184,6 +190,23 @@ end
 #     return Optim.minimizer(res)
 # end
 
+
+function newtonOptimizeBroyden_forward(f, ψ₀; tol=1e-6, maxiter=10, verbose=false)
+    opts = Optim.Options(
+        g_tol      = tol,
+        iterations = maxiter,
+        show_trace = verbose,
+        store_trace= verbose,
+    
+    )
+    
+    # 4) Build LBFGS with backtracking
+    method = Optim.LBFGS(linesearch = LineSearches.BackTracking(), m=20)
+    
+    opt = optimize(f, ψ₀, method, opts)
+    return Optim.minimizer(opt)
+end
+
 function newtonOptimizeBroyden(f, ψ₀; tol=1e-6, maxiter=10, verbose=false)
     @info "Starting BFGS optimization" tol=tol maxiter=maxiter
 
@@ -325,6 +348,23 @@ function newtonOptimizeOptim(fobj, x0; tol=1e-6, maxiter=10)
     td   = TwiceDifferentiable(fobj, x0; autodiff = :forward, inplace = true)
     opts = Optim.Options(g_tol=tol, iterations=maxiter)
     res  = optimize(td, x0, Newton(), opts)
+    return Optim.minimizer(res)
+end
+
+function newtonOptimizeOptim_forward(fobj, x0; tol=1e-6, maxiter=10, verbose=false)
+    # g!(G, x) must fill G with ∇fobj(x)
+    function g!(G::Vector{Float64}, x::Vector{Float64})
+        G[:] = ForwardDiff.gradient(fobj, x)
+        return nothing
+    end
+
+    opts = Optim.Options(
+      g_tol      = tol,
+      iterations = maxiter,
+      show_trace = verbose
+    )
+    # optimize(f, g!, initial_x, method, options)
+    res = optimize(fobj, g!, x0, LBFGS(), opts)
     return Optim.minimizer(res)
 end
 
