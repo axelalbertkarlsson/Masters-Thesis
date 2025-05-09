@@ -86,6 +86,9 @@ function taylorApprox(o, oInd, tc, x, I_z, n_z_t)
             #sum_part = sum(tc[ind[2:end]] .* eox[2:end])
             weighted_sum = sum((tc[ind[2:end]] .* eox[2:end]) .* o[ind[2:end], :], dims=1)
             G[j, :] .-= ((eox[1] - eox[end]) / den^2) .* vec(weighted_sum)
+            if any(isnan, G[j, :])
+                println("G[$j, :] contains NaN at j = $j, ind = $ind")
+            end
         end
     end
     H = [G I_z]
