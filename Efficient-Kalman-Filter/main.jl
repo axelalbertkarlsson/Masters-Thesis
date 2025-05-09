@@ -186,7 +186,7 @@ open("NM.csv", "w") do io
     println(io, "Newton Method Parameters")
     for (label, param) in nm_params
         println(io, label)
-        show(IOContext(io, :limit => false), "text/plain", param)
+        println(io, repr(param))  # <--- This line changed
         println(io, "\n")
     end
 
