@@ -1,4 +1,4 @@
-using Revise, LinearAlgebra, Plots, DataFrames, CSV, Statistics, Printf
+using Revise, LinearAlgebra, Plots, DataFrames, CSV, Statistics, Printf, ProgressMeter
 
 include("loadData.jl")
 include("pricingFunctions.jl")
@@ -14,13 +14,11 @@ using .newtonMethod
 using .loadData
 using .pricingFunctions
 
-# packages Revise, LinearAlgebra, Plots, DataFrames, CSV, Statistics, Printf, ProgressMeter, Dates, ReverseDiff, ForwardDiff, LinearMaps, IterativeSolvers, LineSearches, Optim, MAT
-
 # Clears terminal
 clear() = print("\e[2J\e[H")
 
 # Split data: p% in-sample, (1-p)% out-of-sample
-p = 0.005
+p = 0.01
 
 Float32_bool = false
 
@@ -39,6 +37,23 @@ else
     data_insample = split.insample
     data_outsample = split.outsample
 end
+
+n_x     = Int(data_insample.n_x)
+avg_n_z = mean( Int.(data_insample.n_z_t) )
+
+# assume you only want to use up to, say, 6 GB = 6e9 bytes
+target_bytes = 6e9
+
+bytes_per_step = 8 * (2*n_x + 2*n_x^2 + avg_n_z)
+recommended_chunk = floor(Int, target_bytes / bytes_per_step)
+
+println("→ With n_x = $n_x, avg_n_z = $avg_n_z,")
+println("  bytes/step = $(round(bytes_per_step; digits=0))")
+println("  → you can afford CHUNK ≃ $recommended_chunk")
+
+CHUNK = 1                # tune to fit your RAM
+T = Int(data_insample.n_t)
+chunks = [i:min(i+CHUNK-1, T) for i in 1:CHUNK:T]
 
 # Run Filter
 x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll = EKF.kalman_filter_smoother_lag1(
@@ -73,6 +88,8 @@ x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll = EKF.kalman_filter_smooth
  )
 println("Regular - Kalman Done")
 
+
+
  #Newton Method
 x_filt_NM, P_filt_NM, x_smooth_NM, P_smooth_NM, P_lag_NM, oAll_NM, EAll_NM,
 a0_NM, Σx_NM, Σw_NM, Σv_NM, θF_NM, θg_NM =
@@ -105,12 +122,13 @@ a0_NM, Σx_NM, Σw_NM, Σv_NM, θF_NM, θg_NM =
     data_insample.Sigma_v,        # Matrix
     data_insample.theta_F,        # Vector
     data_insample.theta_g;        # Matrix
-    tol=1e2,
-    maxiter=25,
+    tol=1e-6,
+    maxiter=50,
     verbose=true,
     θg_bool=true,  # Detemines if too include theta_g
-    chooser=1,      # Chooses which optimizer 
-    segmented=true  # If true then piecewise psi opti
+    chooser=4,      # Chooses which optimizer 
+    segmented=false,  # If true then piecewise psi opti
+    chunks=chunks,
   )
   #Segmented true
   #(Order of fastest (chooser): 1, 4, 2, 5, 3) #5 give NaN
