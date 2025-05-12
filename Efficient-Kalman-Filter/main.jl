@@ -111,7 +111,8 @@ ins, outs = split.insample, split.outsample
   ins.theta_g
 )
 
-# rolling-window NM\ψ_final = rolling_optimize(ins, outs, ψ0)
+# rolling-window NM
+ψ_final = rolling_optimize(ins, outs, ψ0)
 
 # final in-sample comparison
 println("\n=== Final in-sample Comparison ===")
