@@ -111,7 +111,7 @@ for k in keys(nm_params_loaded)
     println(k)
 end
 
-println(typeof(a0_NM))
+# println(typeof(a0_NM))
 
 # function parse_vector_matrix(str)
 #     # Remove header lines like "50-element Vector{Float64}:" or "50×50 Matrix{Float64}:"
@@ -194,61 +194,145 @@ println("Newton - Forward Curve Calculated")
 
 ## ======== Regular Filter method ============ ###
 # Run Filter
-x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll = EKF.kalman_filter_smoother_lag1(
-    data_insample.zAll,
-    data_insample.oIndAll,
-    data_insample.tcAll,
-    data_insample.I_z_t,
-    data_insample.f_t,
-    Int(data_insample.n_c),
-    Int(data_insample.n_p),
-    Int(data_insample.n_s),
-    Int(data_insample.n_t),
-    Int(data_insample.n_u),
-    Int(data_insample.n_x),
-    Int.(data_insample.n_z_t),
-    data_insample.A_t,
-    data_insample.B_t,
-    data_insample.D_t,
-    data_insample.G_t,
-    data_insample.Sigma_w,
-    data_insample.Sigma_v,
-    #vec(data_insample.a_x),
-    vec(Float64.(zeros(Int(data_insample.n_x),1))),
-    data_insample.Sigma_x,
-    vec(data_insample.theta_F),
-    data_insample.theta_g,
-    data_insample.firstDates,
-    data_insample.tradeDates,
-    data_insample.ecbRatechangeDates,
-    data_insample.T0All,
-    data_insample.TAll
- )
-println("Regular - Kalman done")
+# x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll = EKF.kalman_filter_smoother_lag1(
+#     data_insample.zAll,
+#     data_insample.oIndAll,
+#     data_insample.tcAll,
+#     data_insample.I_z_t,
+#     data_insample.f_t,
+#     Int(data_insample.n_c),
+#     Int(data_insample.n_p),
+#     Int(data_insample.n_s),
+#     Int(data_insample.n_t),
+#     Int(data_insample.n_u),
+#     Int(data_insample.n_x),
+#     Int.(data_insample.n_z_t),
+#     data_insample.A_t,
+#     data_insample.B_t,
+#     data_insample.D_t,
+#     data_insample.G_t,
+#     data_insample.Sigma_w,
+#     data_insample.Sigma_v,
+#     #vec(data_insample.a_x),
+#     vec(Float64.(zeros(Int(data_insample.n_x),1))),
+#     data_insample.Sigma_x,
+#     vec(data_insample.theta_F),
+#     data_insample.theta_g,
+#     data_insample.firstDates,
+#     data_insample.tradeDates,
+#     data_insample.ecbRatechangeDates,
+#     data_insample.T0All,
+#     data_insample.TAll
+#  )
+# println("Regular - Kalman done")
 
-# Calculate Forward Rates and Repricing
-fAll, priceAll, innovationAll = outputData.calculateRateAndRepricing(
-    EAll,
-    data_insample.zAll,
-    data_insample.I_z_t,
-    x_smooth,
-    oAll,
-    data_insample.oIndAll,
-    data_insample.tcAll,
-    data_insample.theta_g,
-    Int.(data_insample.n_z_t),
-    Int(data_insample.n_t),
-    Int(data_insample.n_s),
-    Int(data_insample.n_u),
-);
-println("Regular - Forward Curve Calculated")
+# # Calculate Forward Rates and Repricing
+# fAll, priceAll, innovationAll = outputData.calculateRateAndRepricing(
+#     EAll,
+#     data_insample.zAll,
+#     data_insample.I_z_t,
+#     x_smooth,
+#     oAll,
+#     data_insample.oIndAll,
+#     data_insample.tcAll,
+#     data_insample.theta_g,
+#     Int.(data_insample.n_z_t),
+#     Int(data_insample.n_t),
+#     Int(data_insample.n_s),
+#     Int(data_insample.n_u),
+# );
+# println("Regular - Forward Curve Calculated")
 
 ## ======= Plots and shit ========== ##
 
 plt1 = plots.plot3DCurve(data_insample.times, fAll_NM, "Newton Method")
-plt2 = plots.plot3DCurve(data_insample.times, fAll, "Regular")
+# plt2 = plots.plot3DCurve(data_insample.times, fAll, "Regular")
 
-display(plt2)
-println("Regular - Plot Done")
+# display(plt2)
+# println("Regular - Plot Done")
 display(plt1)
 println("Newton - Plot Done")
+
+# CSV.write("innovationAll_NM.csv", DataFrame(innovationAll_NM, :auto))
+# Plot all innovations in innovationAll_NM as points, one per row and column
+# n_rows, n_cols = size(innovationAll_NM)
+# row_indices = repeat(1:n_rows, inner=n_cols)
+# col_values = vec(innovationAll_NM)
+# plt_innov_all = scatter(row_indices, col_values, xlabel="Time Index", ylabel="Innovation", title="All Innovations (NM) at Each Time Point", legend=false)
+# display(plt_innov_all)
+
+# Handle both vector and matrix cases for innovationAll_NM
+# dims = size(innovationAll_NM)
+# if length(dims) == 2
+#     n_rows, n_cols = dims
+# elseif length(dims) == 1
+#     n_rows = dims[1]
+#     n_cols = 1
+#     innovationAll_NM = reshape(innovationAll_NM, n_rows, 1)  # Convert to column vector (matrix)
+# else
+#     error("Unexpected dimensions for innovationAll_NM")
+# end
+
+# # Prepare data for scatter plot
+# row_indices = repeat(1:n_rows, inner=n_cols)
+# col_indices = repeat(1:n_cols, outer=n_rows)
+# col_values = vec(innovationAll_NM)
+
+# # Plot: Each point is (row index, value)
+# plt_innov_all = scatter(
+#     row_indices,
+#     col_values,
+#     xlabel = "Time Index",
+#     ylabel = "Innovation",
+#     title = "All Innovations (NM) at Each Time Point",
+#     legend = false
+# )
+# display(plt_innov_all)
+
+# Assume innovationAll_NM is a Vector of Vectors (jagged array)
+row_indices = Int[]
+col_indices = Int[]
+col_values = Float64[]
+
+for (i, row) in enumerate(innovationAll_NM)
+    for (j, val) in enumerate(row)
+        push!(row_indices, i)
+        push!(col_indices, j)
+        push!(col_values, val)
+    end
+end
+
+plt_innov_all = scatter(
+    row_indices,
+    col_values,
+    xlabel = "Time Index",
+    ylabel = "Innovation",
+    title = "All Innovations (NM) at Each Time Point",
+    legend = false
+)
+display(plt_innov_all)
+
+plt_innov_hist = histogram(
+    col_values,
+    bins = 1000,  # You can adjust the number of bins as needed
+    xlabel = "Innovation",
+    ylabel = "Frequency",
+    title = "Histogram of All Innovations (NM)",
+    legend = false,
+    normalize = true  # Optional: normalize to show probability density
+)
+display(plt_innov_hist)
+
+# Filter values to only those between -0.0025 and 0.0025
+filtered_col_values = [v for v in col_values if -0.0005 <= v <= 0.0005]
+
+plt_innov_hist = histogram(
+    filtered_col_values,
+    bins = 3000,  # You can adjust the number of bins as needed
+    xlabel = "Innovation",
+    ylabel = "Frequency",
+    title = "Histogram of All Innovations (NM) [-0.0025, 0.0025]",
+    legend = false,
+    normalize = true  # Optional: normalize to show probability density
+)
+display(plt_innov_hist)
