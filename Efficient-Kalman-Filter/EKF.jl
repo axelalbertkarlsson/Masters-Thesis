@@ -230,7 +230,7 @@ function NM(
         # penalize large x_pred norms (across t=1:T)
             pen = sum(norm.(x_pred).^2)
         
-            return -0.5*neg2ℓ + μ*pen + λ*sum(abs2, ψ)
+            return 0.5*neg2ℓ + μ*pen + λ*sum(abs2, ψ)
         catch
             return 1e8 + λ*sum(abs2, ψ)
       end
