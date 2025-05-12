@@ -84,28 +84,28 @@ function taylorApprox(o, oInd, tc, x, I_z, n_z_t)
             # println(eox) 
             g[j] = (eox[1] - 1) / tc[ind][1]
             G[j, :] = (-eox[1]) .* o[ind, :] ./ tc[ind][1]
-            if isnan(tc[ind][1])
-                println("tc[ind][1] is NaN at j = $j, ind = $ind")
-            end
-            if any(isnan, o[ind, :])
-                println("o[ind, :] contains NaN at j = $j, ind = $ind, oInd = $oInd, o[ind, :] = $(o[ind, :])")
-            end
-            if isnan(eox[1]) || isinf(eox[1])
-                println("eox[1] is NaN or Inf at j = $j, ind = $ind, oInd = $oInd, eox[1] = $(eox[1])")
-            end
-            if any(isnan, G[j, :]) # Use to debug
-                println("eox[1] = ", eox[1])
-                println("o[ind, :] = ", o[ind, :])
-                println("tc[ind][1] = ", tc[ind][1])
-                println("(-eox[1]) .* o[ind, :] = ", (-eox[1]) .* o[ind, :])
-                println("(-eox[1]) .* o[ind, :] ./ tc[ind][1] = ", (-eox[1]) .* o[ind, :] ./ tc[ind][1])
-            end
+            # if isnan(tc[ind][1])
+            #     println("tc[ind][1] is NaN at j = $j, ind = $ind")
+            # end
+            # if any(isnan, o[ind, :])
+            #     println("o[ind, :] contains NaN at j = $j, ind = $ind, oInd = $oInd, o[ind, :] = $(o[ind, :])")
+            # end
+            # if isnan(eox[1]) || isinf(eox[1])
+            #     println("eox[1] is NaN or Inf at j = $j, ind = $ind, oInd = $oInd, eox[1] = $(eox[1])")
+            # end
+            # if any(isnan, G[j, :]) # Use to debug
+            #     println("eox[1] = ", eox[1])
+            #     println("o[ind, :] = ", o[ind, :])
+            #     println("tc[ind][1] = ", tc[ind][1])
+            #     println("(-eox[1]) .* o[ind, :] = ", (-eox[1]) .* o[ind, :])
+            #     println("(-eox[1]) .* o[ind, :] ./ tc[ind][1] = ", (-eox[1]) .* o[ind, :] ./ tc[ind][1])
+            # end
         else
             eox = exp.(o[ind, :] * x)
             valid_idx = findall(!isnan, tc[ind]) #added by axel
-            if any(isnan, tc[ind][valid_idx])
-                println("tc[ind][valid_idx] contains NaN at j = $j, ind = $ind, valid_idx = $valid_idx")
-            end
+            # if any(isnan, tc[ind][valid_idx])
+            #     println("tc[ind][valid_idx] contains NaN at j = $j, ind = $ind, valid_idx = $valid_idx")
+            # end
             den = sum(tc[ind[valid_idx]] .* eox[valid_idx])
             # den = sum(tc[ind[2:end]] .* eox[2:end])
             g[j] = (eox[1] - eox[end]) / den
@@ -114,9 +114,9 @@ function taylorApprox(o, oInd, tc, x, I_z, n_z_t)
             # weighted_sum = sum((tc[ind[2:end]] .* eox[2:end]) .* o[ind[2:end], :], dims=1)
             weighted_sum = sum((tc[ind[valid_idx]] .* eox[valid_idx]) .* o[ind[valid_idx], :], dims=1) # added by axel
             G[j, :] .-= ((eox[1] - eox[end]) / den^2) .* vec(weighted_sum)
-            if any(isnan, G[j, :])
-                println("G[$j, :] contains NaN at j = $j, ind = $ind")
-            end
+            # if any(isnan, G[j, :])
+            #     println("G[$j, :] contains NaN at j = $j, ind = $ind")
+            # end
         end
     end
     H = [G I_z]

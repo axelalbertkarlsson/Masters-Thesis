@@ -1,10 +1,14 @@
 module outputData
 
-using LinearAlgebra
 
 include("pricingFunctions.jl")
 
+using LinearAlgebra, Printf
 using .pricingFunctions
+
+import Statistics
+
+export calculateMSE, calculateRateAndRepricing
 
 function calculateRateAndRepricing(EAll, zAll, I_z_t, xAll, oAll, oIndAll, tcAll, θg, n_z_t,n_t, n_s, n_u)
     # Initialization
@@ -37,6 +41,28 @@ function calculateRateAndRepricing(EAll, zAll, I_z_t, xAll, oAll, oIndAll, tcAll
     end
 
     return fAll, priceAll, innovationAll;
+end
+
+
+function calculateMSE(innovationAll)
+    # === Print overall error metrics for both methods ===
+    # 1) flatten into one long numeric vector
+    all_reg = vcat([vec(x) for x in innovationAll]...)
+
+    # 2a) compute MSE
+    mse_reg = Statistics.mean(all_reg .^ 2)
+
+    # 2b) compute MAE
+    mae_reg = Statistics.mean(abs.(all_reg))
+
+    # 3) pretty-print with Printf
+    println("--------------------------------------------------")
+    @printf("MSE  (EKF):           % .5e\n", mse_reg)
+    println()
+    @printf("MAE  (EKF):           % .5e\n", mae_reg)
+    println("--------------------------------------------------")
+
+    return mse_reg, mae_reg    
 end
 
 end # module

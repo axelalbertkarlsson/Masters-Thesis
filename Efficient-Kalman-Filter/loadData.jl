@@ -172,7 +172,7 @@ function split_data(kd::KalmanData{T}, ratio::Float64) where {T}
     idx = Int(floor(ratio * n))
 
     ins = KalmanData{T}(
-      kd.ecbRatechangeDates,
+      kd.ecbRatechangeDates, #Kanske borde splitas
       kd.zAll[1:idx],
       kd.times[1:idx],
       kd.firstDates,
@@ -192,7 +192,7 @@ function split_data(kd::KalmanData{T}, ratio::Float64) where {T}
     )
 
     out = KalmanData{T}(
-      kd.ecbRatechangeDates,
+      kd.ecbRatechangeDates, #Kanske borde splitas
       kd.zAll[idx+1:end],
       kd.times[idx+1:end],
       kd.firstDates,
