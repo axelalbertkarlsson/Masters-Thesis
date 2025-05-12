@@ -1,4 +1,4 @@
-using Revise, LinearAlgebra, Plots, DataFrames, CSV, Statistics, Printf
+using Revise, LinearAlgebra, Plots, DataFrames, CSV, Statistics, Printf, Plots
 
 include("loadData.jl")
 include("pricingFunctions.jl")
@@ -143,7 +143,7 @@ a0_NM  = nm_params_loaded["a0_NM"]
 θg_NM  = nm_params_loaded["θg_NM"]
 
 # Run Filter
-x_filt_NM, P_filt_NM, x_smooth_NM, P_smooth_NM, P_lag_NM, oAll_NM, EAll_NM = EKF.kalman_filter_smoother_lag1(
+x_pred_NM, P_pred_NM, x_filt_NM, P_filt_NM, x_smooth_NM, P_smooth_NM, P_lag_NM, oAll_NM, EAll_NM = EKF.kalman_filter_smoother_lag1(
     data_insample.zAll,
     data_insample.oIndAll,
     data_insample.tcAll,
@@ -175,6 +175,23 @@ x_filt_NM, P_filt_NM, x_smooth_NM, P_smooth_NM, P_lag_NM, oAll_NM, EAll_NM = EKF
  )
 println("Newton - Kalman Done")
 
+### Axel to calc things
+z_pred, z_filt, z_smooth, z_pred_top, z_pred_bottom, z_filt_top, z_filt_bottom, z_smooth_top, z_smooth_bottom = EKF.function_for_plotting_three_shumway_graphs(
+    x_pred_NM, 
+    P_pred_NM, 
+    x_filt_NM, 
+    P_filt_NM, 
+    x_smooth_NM, 
+    P_smooth_NM, 
+    oAll_NM, 
+    data_insample.oIndAll, 
+    data_insample.tcAll, 
+    data_insample.I_z_t, 
+    Int.(data_insample.n_z_t), 
+    Int(data_insample.n_t), 
+    Int(data_insample.n_s)
+    )
+
 # Calculate Forward Rates and Repricing
 fAll_NM, priceAll_NM, innovationAll_NM = outputData.calculateRateAndRepricing(
     EAll_NM,
@@ -191,6 +208,8 @@ fAll_NM, priceAll_NM, innovationAll_NM = outputData.calculateRateAndRepricing(
     Int(data_insample.n_u),
 );
 println("Newton - Forward Curve Calculated")
+
+
 
 ## ======== Regular Filter method ============ ###
 # Run Filter
@@ -243,8 +262,7 @@ println("Newton - Forward Curve Calculated")
 # );
 # println("Regular - Forward Curve Calculated")
 
-## ======= Plots and shit ========== ##
-
+## ======= Acutal plotting ========== ##
 plt1 = plots.plot3DCurve(data_insample.times, fAll_NM, "Newton Method")
 # plt2 = plots.plot3DCurve(data_insample.times, fAll, "Regular")
 
@@ -253,32 +271,96 @@ plt1 = plots.plot3DCurve(data_insample.times, fAll_NM, "Newton Method")
 display(plt1)
 println("Newton - Plot Done")
 
-# CSV.write("innovationAll_NM.csv", DataFrame(innovationAll_NM, :auto))
-# Plot all innovations in innovationAll_NM as points, one per row and column
-# n_rows, n_cols = size(innovationAll_NM)
-# row_indices = repeat(1:n_rows, inner=n_cols)
-# col_values = vec(innovationAll_NM)
-# plt_innov_all = scatter(row_indices, col_values, xlabel="Time Index", ylabel="Innovation", title="All Innovations (NM) at Each Time Point", legend=false)
-# display(plt_innov_all)
+# Plotting innovations and other shumway plots
+plots.plot_kalman_results(z_pred, z_filt, z_smooth, data_insample.zAll)
+plots.plot_innovations(innovationAll_NM)
 
-# Handle both vector and matrix cases for innovationAll_NM
-# dims = size(innovationAll_NM)
-# if length(dims) == 2
-#     n_rows, n_cols = dims
-# elseif length(dims) == 1
-#     n_rows = dims[1]
-#     n_cols = 1
-#     innovationAll_NM = reshape(innovationAll_NM, n_rows, 1)  # Convert to column vector (matrix)
-# else
-#     error("Unexpected dimensions for innovationAll_NM")
+### ===== Old code now in plots.jl ====== ###
+## -------------------------------------- ###
+
+# # Extract the first element from each of the 5030 z_pred, z_filt, and z_smooth vectors
+# z_pred_first_elements = [z_pred[t][1] for t in 1:length(z_pred)]
+# z_filt_first_elements = [z_filt[t][1] for t in 1:length(z_filt)]
+# z_smooth_first_elements = [z_smooth[t][1] for t in 1:length(z_smooth)]
+
+# # Plot all three: z_pred, z_filt, and z_smooth first elements on the same plot
+# plt_all = plot(
+#     z_pred_first_elements, 
+#     label="z_pred[t][1]", 
+#     title="First element of z_pred, z_filt, and z_smooth over all time steps", 
+#     xlabel="Time index", 
+#     ylabel="Value"
+# )
+# plot!(plt_all, z_filt_first_elements, label="z_filt[t][1]")
+# plot!(plt_all, z_smooth_first_elements, label="z_smooth[t][1]")
+# display(plt_all)
+
+# # Plot of differences 
+# # Compute the difference between data_insample.zAll and z_pred, z_filt, z_smooth for the first element at each time step, starting at time 2
+# zAll_first_elements = [data_insample.zAll[t][1] for t in 2:length(data_insample.zAll)]
+# z_pred_first_elements_2 = [z_pred[t][1] for t in 2:length(z_pred)]
+# z_filt_first_elements_2 = [z_filt[t][1] for t in 2:length(z_filt)]
+# z_smooth_first_elements_2 = [z_smooth[t][1] for t in 2:length(z_smooth)]
+
+# diff_z_pred = [zAll_first_elements[t] - z_pred_first_elements_2[t] for t in 1:length(zAll_first_elements)]
+# diff_z_filt = [zAll_first_elements[t] - z_filt_first_elements_2[t] for t in 1:length(zAll_first_elements)]
+# diff_z_smooth = [zAll_first_elements[t] - z_smooth_first_elements_2[t] for t in 1:length(zAll_first_elements)]
+
+# # Plot the differences starting at time 2
+# plt_diff = plot(
+#     diff_z_pred,
+#     label="zAll[t][1] - z_pred[t][1]",
+#     title="Difference: data_insample.zAll - z_pred/z_filt/z_smooth (first element, t=2:end)",
+#     xlabel="Time index (starting at t=2)",
+#     ylabel="Difference"
+# )
+# plot!(plt_diff, diff_z_filt, label="zAll[t][1] - z_filt[t][1]")
+# plot!(plt_diff, diff_z_smooth, label="zAll[t][1] - z_smooth[t][1]")
+# display(plt_diff)
+
+# # Create three separate plots for the first elements of z_pred, z_filt, and z_smooth
+
+# # Create three separate plots for the differences between data_insample.zAll and z_pred, z_filt, z_smooth (first element)
+# plt_diff_pred = plot(
+#     diff_z_pred,
+#     label = "zAll[t][1] - z_pred[t][1]",
+#     title = "Difference: zAll[t][1] - z_pred[t][1] over all time steps",
+#     xlabel = "Time index",
+#     ylabel = "Difference"
+# )
+# display(plt_diff_pred)
+
+# plt_diff_filt = plot(
+#     diff_z_filt,
+#     label = "zAll[t][1] - z_filt[t][1]",
+#     title = "Difference: zAll[t][1] - z_filt[t][1] over all time steps",
+#     xlabel = "Time index",
+#     ylabel = "Difference"
+# )
+# display(plt_diff_filt)
+
+# plt_diff_smooth = plot(
+#     diff_z_smooth,
+#     label = "zAll[t][1] - z_smooth[t][1]",
+#     title = "Difference: zAll[t][1] - z_smooth[t][1] over all time steps",
+#     xlabel = "Time index",
+#     ylabel = "Difference"
+# )
+# display(plt_diff_smooth)
+
+# # Assume innovationAll_NM is a Vector of Vectors (jagged array)
+# row_indices = Int[]
+# col_indices = Int[]
+# col_values = Float64[]
+
+# for (i, row) in enumerate(innovationAll_NM)
+#     for (j, val) in enumerate(row)
+#         push!(row_indices, i)
+#         push!(col_indices, j)
+#         push!(col_values, val)
+#     end
 # end
 
-# # Prepare data for scatter plot
-# row_indices = repeat(1:n_rows, inner=n_cols)
-# col_indices = repeat(1:n_cols, outer=n_rows)
-# col_values = vec(innovationAll_NM)
-
-# # Plot: Each point is (row index, value)
 # plt_innov_all = scatter(
 #     row_indices,
 #     col_values,
@@ -289,50 +371,29 @@ println("Newton - Plot Done")
 # )
 # display(plt_innov_all)
 
-# Assume innovationAll_NM is a Vector of Vectors (jagged array)
-row_indices = Int[]
-col_indices = Int[]
-col_values = Float64[]
+# plt_innov_hist = histogram(
+#     col_values,
+#     bins = 1000,  # You can adjust the number of bins as needed
+#     xlabel = "Innovation",
+#     ylabel = "Frequency",
+#     title = "Histogram of All Innovations (NM)",
+#     legend = false,
+#     normalize = true  # Optional: normalize to show probability density
+# )
+# display(plt_innov_hist)
 
-for (i, row) in enumerate(innovationAll_NM)
-    for (j, val) in enumerate(row)
-        push!(row_indices, i)
-        push!(col_indices, j)
-        push!(col_values, val)
-    end
-end
+# # Filter values to only those between -0.0025 and 0.0025
+# filtered_col_values = [v for v in col_values if -0.0005 <= v <= 0.0005]
 
-plt_innov_all = scatter(
-    row_indices,
-    col_values,
-    xlabel = "Time Index",
-    ylabel = "Innovation",
-    title = "All Innovations (NM) at Each Time Point",
-    legend = false
-)
-display(plt_innov_all)
+# plt_innov_hist = histogram(
+#     filtered_col_values,
+#     bins = 3000,  # You can adjust the number of bins as needed
+#     xlabel = "Innovation",
+#     ylabel = "Frequency",
+#     title = "Histogram of All Innovations (NM) [-0.0025, 0.0025]",
+#     legend = false,
+#     normalize = true  # Optional: normalize to show probability density
+# )
+# display(plt_innov_hist)
 
-plt_innov_hist = histogram(
-    col_values,
-    bins = 1000,  # You can adjust the number of bins as needed
-    xlabel = "Innovation",
-    ylabel = "Frequency",
-    title = "Histogram of All Innovations (NM)",
-    legend = false,
-    normalize = true  # Optional: normalize to show probability density
-)
-display(plt_innov_hist)
-
-# Filter values to only those between -0.0025 and 0.0025
-filtered_col_values = [v for v in col_values if -0.0005 <= v <= 0.0005]
-
-plt_innov_hist = histogram(
-    filtered_col_values,
-    bins = 3000,  # You can adjust the number of bins as needed
-    xlabel = "Innovation",
-    ylabel = "Frequency",
-    title = "Histogram of All Innovations (NM) [-0.0025, 0.0025]",
-    legend = false,
-    normalize = true  # Optional: normalize to show probability density
-)
-display(plt_innov_hist)
+## -------------------------------------- ###
