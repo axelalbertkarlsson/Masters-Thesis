@@ -1,124 +1,128 @@
-# newtonMethodRev.jl
 module newtonMethod
 
-using ReverseDiff, LinearAlgebra, Optim, LineSearches, ForwardDiff
+using ReverseDiff, LinearAlgebra
+using Optim, LineSearches
+using ForwardDiff
 
-export newtonStep, newtonOptimize, newtonOptimizeBroyden
+export newtonStep, newtonOptimize, newtonOptimizeBroyden, optimize_parameters, optimize_bfgs
 
-# === Build compiled tapes for gradient & Hessian ===
-    function setup_tapes(f::Function, ψ0::AbstractVector{<:AbstractFloat})
-        println("→ Building gradient tape…")
-        grad_tape = ReverseDiff.GradientTape(f, ψ0)
-        println("→ Compiling gradient tape…")
-        ReverseDiff.compile(grad_tape)
-        println("→ Building Hessian tape…")
-        hess_tape = ReverseDiff.HessianTape(f, ψ0)
-        println("→ Compiling Hessian tape…")
-        ForwardDiff.compile(hess_tape)
-        println("→ Done compiling tapes.")
-        return grad_tape, hess_tape
-      end
-      
+# === Build & compile a single ReverseDiff tape for gradients ===
+function setup_tape!(f::Function, x0::Vector{Float64})
+    @info "Building gradient tape…"
+    tape = ReverseDiff.GradientTape(f, x0)
+    @info "Compiling gradient tape…"
+    ReverseDiff.compile(tape)
+    return tape
+end
 
 # === One Newton step, with Armijo backtracking ===
-function newtonStep(f, grad_tape, hess_tape,
-                    ψ::AbstractVector{<:AbstractFloat};
-                    α::Float64=1e-4,
-                    s0::Float64=1.0,
-                    s_min::Float64=1e-8,
+function newtonStep(f::Function, tape, x::Vector{Float64};
+                    α::Float64=1e-4, s0::Float64=1.0, s_min::Float64=1e-8,
                     verbose::Bool=false)
-
-    n = length(ψ)
-    # 1) gradient
+    n = length(x)
     g = zeros(n)
-    ReverseDiff.gradient!(g, grad_tape, ψ)
+    ReverseDiff.gradient!(g, tape, x)
+    H = ForwardDiff.hessian!(zeros(n,n), y->f(y), x)
+    Δ = -H \ g
 
-    # 2) Hessian
-    H = zeros(n, n)
-    ForwardDiff.hessian!(H, hess_tape, ψ)
-
-    # 3) Newton direction Δψ = −H⁻¹ g
-    Δψ = - H \ g
-
-    # 4) backtracking line search (Armijo)
-    f0 = f(ψ)
-    s = s0
-    while s ≥ s_min && f(ψ .+ s .* Δψ) > f0 + α * s * dot(g, Δψ)
+    f0 = f(x); s = s0
+    while s ≥ s_min && f(x .+ s .* Δ) > f0 + α * s * dot(g, Δ)
         s *= 0.5
     end
+    verbose && @info " ‖Δ‖=$(norm(Δ)), step=$s"
 
-    if verbose
-        println("  ‖Δψ‖ = ", norm(Δψ), "   step size = ", s)
-    end
-
-    ψ_new = ψ .+ s .* Δψ
-    return ψ_new, norm(Δψ)
+    return x .+ s .* Δ, norm(Δ)
 end
 
 # === Full Newton optimizer ===
-function newtonOptimize(f, ψ₀::AbstractVector{<:AbstractFloat};
-                        tol::Float64=1e-4,
-                        maxiter::Int=5,
-                        verbose::Bool=false)
-
-    ψ = copy(ψ₀)
-    grad_tape, hess_tape = setup_tapes(f, ψ₀)
-
+function newtonOptimize(f::Function, x0::Vector{Float64};
+                        tol::Float64=1e-4, maxiter::Int=5, verbose::Bool=false)
+    tape = setup_tape!(f, x0)
+    x = copy(x0)
     for k in 1:maxiter
-        ψ_new, δnorm = newtonStep(f, grad_tape, hess_tape, ψ; verbose=verbose)
-        if δnorm < tol
-            verbose && println("Converged at iter = $k (‖Δψ‖=$δnorm)")
-            return ψ_new
+        x_new, δ = newtonStep(f, tape, x; verbose=verbose)
+        if δ < tol
+            verbose && @info "Converged at iter=$k (‖Δ‖=$δ)"
+            return x_new
         end
-        ψ = ψ_new
+        x = x_new
     end
-
-    verbose && println("Reached maxiter = $maxiter (‖Δψ‖=$(δnorm))")
-    return ψ
+    verbose && @warn "Reached maxiter=$maxiter (‖Δ‖=$(δ))"
+    return x
 end
-function newtonOptimizeBroyden(f, ψ₀; tol=1e-6, maxiter=10, verbose=false)
-    @info "Starting BFGS optimization" tol=tol maxiter=maxiter
 
-    # 1) Build & compile tape
-    tape = ReverseDiff.GradientTape(f, ψ₀)
-    @info "Compiling ReverseDiff gradient tape…"
-    ReverseDiff.compile(tape)
+# === Unconstrained BFGS via ReverseDiff + Optim.jl ===
+function newtonOptimizeBroyden(f::Function, x0::Vector{Float64};
+                              tol::Float64=1e-6, maxiter::Int=10, verbose::Bool=false)
+    @info "Starting unconstrained BFGS…"
+    tape = setup_tape!(f, x0)
+    grad! = (g,x)->(ReverseDiff.gradient!(g,tape,x); g)
 
-    # 2) Mutating gradient! for Optim.jl
-    function gradient!(g::AbstractVector, x::AbstractVector)
-        # g is pre-allocated by Optim.jl
-        ReverseDiff.gradient!(g, tape, x)
-        return g
-    end
+    opts = Optim.Options(
+      g_tol      = tol,
+      iterations = maxiter,
+      store_trace= verbose,
+      show_trace = verbose
+    )
+    res = optimize(f, grad!, x0, BFGS(), opts)
+    Optim.converged(res) ?
+      @info("BFGS converged in $(res.iterations) steps") :
+      @warn("BFGS did NOT converge", status=res)
+    return Optim.minimizer(res)
+end
 
-    # 3) Optim options
-    # opts = Optim.Options(
-    #   g_tol      = tol,
-    #   iterations = maxiter,
-    #   show_trace = verbose,
-    #   store_trace= verbose
-    # )
-    opts = Optim.Options(g_tol=tol,
-                          iterations=maxiter,
-                          show_trace=verbose)
+"""
+ One‐stop wrapper for quasi‐Newton (BFGS) *without* box‐constraints:
 
-    # build a BFGS optimizer that uses plain backtracking
-    bt = LineSearches.BackTracking()
-    method = Optim.BFGS(linesearch = bt)
+ - `f`       : objective f(x::Vector) → Float64  
+ - `x0`      : initial guess (Vector{Float64})  
+ - `tol`     : gradient‐norm tolerance  
+ - `maxiter` : max iterations  
+ - `verbose` : trace output  
 
-    res = optimize(f, gradient!, ψ₀, method, opts)
+Returns the minimizer as Vector{Float64}.
+"""
+function optimize_parameters(
+    f::Function,
+    x0::Vector{Float64};
+    tol::Float64      = 1e-6,
+    maxiter::Int      = 10,
+    verbose::Bool     = false
+)
+    # compile tape + gradient mutator
+    tape = setup_tape!(f, x0)
+    grad! = (g,x)->(ReverseDiff.gradient!(g,tape,x); g)
 
-    # 4) Run BFGS (opts must be positional arg #5)
-    # res = optimize(f, gradient!, ψ₀, BFGS(), opts)
+    # build a BFGS instance with a modest initial step and backtracking
+    inner_method = BFGS(
+      alphaguess = InitialStatic(alpha=1e-5),
+      linesearch = BackTracking()
+    )
 
-    # 5) Report
-    if Optim.converged(res)
-        @info "BFGS converged in $(res.iterations) steps"
-    else
-        @warn "BFGS did NOT converge" status=res
-    end
-    @info "Final objective" f_min=Optim.minimum(res)
+    # inner‐solver options
+    opts = Optim.Options(
+      g_tol      = tol,
+      iterations = maxiter,
+      store_trace= verbose,
+      show_trace = verbose
+    )
 
+    @info "Starting unconstrained BFGS…"
+    res = optimize(f, grad!, x0, inner_method, opts)
+    return Optim.minimizer(res)
+end
+
+function optimize_bfgs(f, x0; tol=1e-6, maxiter=10, verbose=false)
+    res = optimize(
+      f,                             # objective
+      x0,                            # initial guess
+      BFGS();                        # use BFGS
+      autodiff   = :forward,         # ForwardDiff for gradients
+      g_tol      = tol,
+      iterations = maxiter,
+      show_trace = verbose,
+      store_trace= verbose
+    )
     return Optim.minimizer(res)
 end
 

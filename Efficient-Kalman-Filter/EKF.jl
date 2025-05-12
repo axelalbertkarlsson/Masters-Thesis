@@ -45,7 +45,9 @@ function kalman_filter_smoother_lag1(zAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p,
         )
         H_t, u_t, g, Gradient = pricingFunctions.taylorApprox(oAll[t], oIndAll[t], tcAll[t], x_pred[t][1:n_s], I_z_t[t], n_z_t[t])
         R_t = GAll[t]*Σv*GAll[t]'
-        K[t] = P_pred[t]*H_t' * inv(H_t*P_pred[t]*H_t' + R_t)
+        jitter = 1e-8
+        K[t] = P_pred[t]*H_t' * inv(H_t*P_pred[t]*H_t' + R_t + jitter*I)
+        #K[t] = P_pred[t]*H_t' * inv(H_t*P_pred[t]*H_t' + R_t)
 
         innovation = vec(zAll[t]) - H_t*x_pred[t] - u_t
         x_filt[t] = x_pred[t] + K[t]*innovation
@@ -58,7 +60,10 @@ function kalman_filter_smoother_lag1(zAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p,
     S = [zeros(n_x,n_x) for _ in 1:T-1]
 
     for t = T-1:-1:1
-        S[t] = P_filt[t]*(AAll[t+1]*Diagonal(θF)*BAll[t+1])'*inv(P_pred[t+1])
+        #S[t] = P_filt[t]*(AAll[t+1]*Diagonal(θF)*BAll[t+1])'*inv(P_pred[t+1])
+        jitter = 1e-8
+        S[t] = P_filt[t]*(AAll[t+1]*Diagonal(θF)*BAll[t+1])' * inv(P_pred[t+1] + jitter*I)
+
         x_smooth[t] += S[t]*(x_smooth[t+1] - x_pred[t+1])
         P_smooth[t] += S[t]*(P_smooth[t+1] - P_pred[t+1])*S[t]'
     end
@@ -91,11 +96,35 @@ function NM(
     Newton_bool::Bool=false,
     θg_bool::Bool=false,  
 )
-    # flatten ψ₀
-    if (θg_bool)
-        ψ0 = vcat(vec(a0_0), vec(Σx_0), vec(Σw_0), vec(Σv_0), vec(θg_0), vec(θF_0))
-    else
-        ψ0 = vcat(vec(a0_0), vec(Σx_0), vec(Σw_0), vec(Σv_0), vec(θF_0))
+     # flatten ψ₀ with unconstrained params:
+     #  - we store lower‐triangular entries of chol(Σ) (so PD is automatic)
+     #  - we store unconstrained φ_F such that θ_F = tanh(φ_F)
+     Lx0 = cholesky(Σx_0).L
+     Lw0 = cholesky(Σw_0).L
+     Lv0 = cholesky(Σv_0).L
+     #φF0 = atanh.(θF_0)    # inverse of tanh
+  # make sure θF_0 is strictly inside (–1,1) so atanh never returns ±Inf
+        θF0_safe = clamp.(θF_0, -1 + 1e-6, 1 - 1e-6)
+        φF0      = atanh.(θF0_safe)
+
+
+     if θg_bool
+         ψ0 = vcat(
+           vec(a0_0),
+           vec(tril(Lx0)),       # lower‐tri entries
+           vec(tril(Lw0)),
+           vec(tril(Lv0)),
+           vec(θg_0),
+           φF0
+         )
+     else
+         ψ0 = vcat(
+        vec(a0_0),
+        vec(tril(Lx0)),
+        vec(tril(Lw0)),
+        vec(tril(Lv0)),
+        φF0
+    )
     end
     
     
@@ -125,10 +154,16 @@ function NM(
         # initial state
         a0 = ψ[idx:idx+len_a0-1];                     idx += len_a0
       
-        # Σx, Σw, Σv
-        Σx = reshape(ψ[idx:idx+len_Sx-1], size(Σx_0)); idx += len_Sx
-        Σw = reshape(ψ[idx:idx+len_Sw-1], size(Σw_0)); idx += len_Sw
-        Σv = reshape(ψ[idx:idx+len_Sv-1], size(Σv_0)); idx += len_Sv
+        # Σx, Σw, Σv via their Cholesky factors
+        Lx_flat = ψ[idx:idx+len_Sx-1]; idx += len_Sx
+        Lw_flat = ψ[idx:idx+len_Sw-1]; idx += len_Sw
+        Lv_flat = ψ[idx:idx+len_Sv-1]; idx += len_Sv
+        Lx = reshape(Lx_flat, size(Σx_0))
+        Lw = reshape(Lw_flat, size(Σw_0))
+        Lv = reshape(Lv_flat, size(Σv_0))
+        Σx = Lx * Lx'   # guaranteed PD
+        Σw = Lw * Lw'
+        Σv = Lv * Lv'
       
         # θg if requested
         if θg_bool
@@ -138,13 +173,15 @@ function NM(
           θg = θg_0
         end
       
-        # finally θF
-        θF = ψ[idx:idx+len_F-1]
+        # finally φF → θF via tanh
+        φF = ψ[idx:idx+len_F-1]
+        θF = tanh.(φF)
       
         return a0, Σx, Σw, Σv, θF, θg
       end
       
-
+    λ = 1e3
+    μ = 1e-6
     # objective: negative log‐likelihood (filter only)
     fobj = function(ψ)
         try
@@ -189,11 +226,13 @@ function NM(
             P_filt_loc[t] = (I - Kmat*H_t)*P_pred[t]
         end
 
-        return 0.5 * neg2ℓ
-        catch err
-        # if anything went wrong (singular matrix, NaNs, etc.),
-        # return Inf so BFGS’ line-search backs off safely.
-        return Inf
+        #return 0.5 * neg2ℓ
+        # penalize large x_pred norms (across t=1:T)
+            pen = sum(norm.(x_pred).^2)
+        
+            return -0.5*neg2ℓ + μ*pen + λ*sum(abs2, ψ)
+        catch
+            return 1e8 + λ*sum(abs2, ψ)
       end
     end
 
@@ -201,7 +240,16 @@ function NM(
     if (Newton_bool)
         ψ_opt = newtonOptimize(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
     else
-        ψ_opt = newtonOptimizeBroyden(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
+        #ψ_opt = newtonOptimizeBroyden(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
+        ψ_opt = optimize_parameters(fobj, ψ0;
+                                tol=tol,
+                                maxiter=maxiter,
+                                verbose=verbose
+                            )
+        # ψ_opt = optimize_bfgs(fobj, ψ0;
+        #         tol=tol,
+        #         maxiter=maxiter,
+        #         verbose=verbose)
     end
     # unpack
     a0_opt, Σx_opt, Σw_opt, Σv_opt, θF_opt, θg_opt = psi_to_parameters(ψ_opt, θg_bool)
