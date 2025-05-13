@@ -95,7 +95,7 @@ function optimize_parameters(
 
     # build a BFGS instance with a modest initial step and backtracking
     inner_method = BFGS(
-      alphaguess = InitialStatic(alpha=1e-5),
+      alphaguess = InitialStatic(alpha=1e-2),
       linesearch = BackTracking()
     )
 

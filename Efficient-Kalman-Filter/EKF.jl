@@ -175,13 +175,14 @@ function NM(
       
         # finally φF → θF via tanh
         φF = ψ[idx:idx+len_F-1]
+        φF = clamp.(φF, atanh(-1+1e-6), atanh(1-1e-6))
         θF = tanh.(φF)
       
         return a0, Σx, Σw, Σv, θF, θg
       end
       
-    λ = 1e3
-    μ = 1e-6
+    λ = 1e2
+    μ = 1e-4
     # objective: negative log‐likelihood (filter only)
     fobj = function(ψ)
         try

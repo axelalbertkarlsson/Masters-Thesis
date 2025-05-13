@@ -58,7 +58,7 @@ function nm_on_chunk(ψ::NTuple{6,Any}, outs::KalmanData{Float64}, idxr::UnitRan
         A_c, B_c, D_c, G_c,
         fd_c, td_c, ecb_c, T0_c, TC_c,
         a0, Σx, Σw, Σv, θF, θg;
-        tol=1e-2, maxiter=10, verbose=true,
+        tol=1e-2, maxiter=30, verbose=true,
         Newton_bool=false, θg_bool=true
       )
     return (Σw_new, Σv_new, a0_new, Σx_new, θF_new, θg_new)
@@ -73,7 +73,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
     # chunk size = 1% of total time steps
     total_t = ins.n_t + outs.n_t
-    chunk_sz = max(1, floor(Int, 0.001 * total_t))
+    chunk_sz = max(1, floor(Int, 0.01 * total_t))
     ranges = [s:min(s+chunk_sz-1, outs.n_t) for s in 1:chunk_sz:outs.n_t]
 
     for (ci, idxr) in enumerate(ranges)
