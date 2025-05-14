@@ -42,25 +42,25 @@ function compute_ins_mse(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, subtitle)
 end
 
 # — Run NM on a single chunk, return new ψ tuple
-function nm_on_chunk(ψ::NTuple{6,Any}, outs::KalmanData{Float64}, idxr::UnitRange{Int})
+function nm_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRange{Int})
     Σw, Σv, a0, Σx, θF, θg = ψ
-    z_c    = outs.zAll[idxr]
-    oInd_c = outs.oIndAll[idxr]
-    tc_c   = outs.tcAll[idxr]
-    Iz_c   = outs.I_z_t[idxr]
-    f_c    = outs.f_t[idxr, :]
-    nzc    = Int.(outs.n_z_t[idxr])
-    A_c, B_c, D_c, G_c = outs.A_t[idxr], outs.B_t[idxr], outs.D_t[idxr], outs.G_t[idxr]
-    fd_c, td_c, ecb_c = outs.firstDates[idxr], outs.tradeDates[idxr], outs.ecbRatechangeDates
-    T0_c, TC_c        = outs.T0All[idxr], outs.TAll[idxr]
+    z_c    = ins.zAll[idxr]
+    oInd_c = ins.oIndAll[idxr]
+    tc_c   = ins.tcAll[idxr]
+    Iz_c   = ins.I_z_t[idxr]
+    f_c    = ins.f_t[idxr, :]
+    nzc    = Int.(ins.n_z_t[idxr])
+    A_c, B_c, D_c, G_c = ins.A_t[idxr], ins.B_t[idxr], ins.D_t[idxr], ins.G_t[idxr]
+    fd_c, td_c, ecb_c = ins.firstDates[idxr], ins.tradeDates[idxr], ins.ecbRatechangeDates
+    T0_c, TC_c        = ins.T0All[idxr], ins.TAll[idxr]
     Tchunk            = length(idxr)
 
     x_f, P_f, x_s, P_s, P_l, oAll, EAll,
     a0_new, Σx_new, Σw_new, Σv_new, θF_new, θg_new =
       EKF.NM(
         z_c, oInd_c, tc_c, Iz_c, f_c,
-        outs.n_c, outs.n_p, outs.n_s, Tchunk,
-        outs.n_u, outs.n_x, nzc,
+        ins.n_c, ins.n_p, ins.n_s, Tchunk,
+        ins.n_u, ins.n_x, nzc,
         A_c, B_c, D_c, G_c,
         fd_c, td_c, ecb_c, T0_c, TC_c,
         a0, Σx, Σw, Σv, θF, θg;
