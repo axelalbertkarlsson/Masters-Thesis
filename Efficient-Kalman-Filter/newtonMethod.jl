@@ -2,7 +2,7 @@ module newtonMethod
 
 using ReverseDiff, LinearAlgebra
 using Optim, LineSearches
-using ForwardDiff
+using ForwardDiff, ProgressMeter
 
 export newtonStep, newtonOptimize, newtonOptimizeBroyden, optimize_parameters, optimize_bfgs
 

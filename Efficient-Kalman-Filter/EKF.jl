@@ -181,8 +181,8 @@ function NM(
         return a0, Σx, Σw, Σv, θF, θg
       end
       
-    λ = 1e2
-    μ = 1e-4
+    λ = 1e1
+    μ = 1e-3
     # objective: negative log‐likelihood (filter only)
     fobj = function(ψ)
         try
