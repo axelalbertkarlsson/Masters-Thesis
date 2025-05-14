@@ -73,7 +73,7 @@ end
 # — Rolling-window NM: update ψ only if it improves full in-sample MSE
 function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, ψ0::NTuple{6,Any})
     ψ = ψ0
-    baseline_mse, baseline_mae = compute_ins_mse(ψ, outs, "Regular")
+    baseline_mse, baseline_mae = compute_ins_mse(ψ, ins, "Regular")
     @printf("Baseline in-sample → MSE = %.5e, MAE = %.5e\n",
             baseline_mse, baseline_mae)
 
@@ -87,7 +87,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
                 ci, length(ranges), first(idxr), last(idxr))
         # candidate ψ
         ψ_cand = nm_on_chunk(ψ, ins, idxr)
-        mse_cand, mae_cand = compute_ins_mse(ψ_cand, outs, "Newton Nr: $ci")
+        mse_cand, mae_cand = compute_ins_mse(ψ_cand, ins, "Newton Nr: $ci")
         delta = mse_cand - baseline_mse
         @printf("Old MSE = %.5e, New MSE = %.5e, Δ = %+.5e\n",
                 baseline_mse, mse_cand, delta)
