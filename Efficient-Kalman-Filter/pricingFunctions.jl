@@ -76,11 +76,11 @@ function taylorApprox(o, oInd, tc, x, I_z, n_z_t)
         if j == 1
             
             eox = exp.(-o[ind, :] * x)  # eox[1] inf sometimes
-            if any(isinf, eox[1])
+            # if any(isinf, eox[1])
                 # test = -o[ind, :]
                 # println("-o[ind, :] ", test) 
-                println("x: ", Int.(floor.(x)))
-            end
+                # println("x: ", Int.(floor.(x)))
+            # end
             # println(eox) 
             g[j] = (eox[1] - 1) / tc[ind][1]
             G[j, :] = (-eox[1]) .* o[ind, :] ./ tc[ind][1]
