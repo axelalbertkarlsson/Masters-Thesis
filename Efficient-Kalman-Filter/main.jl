@@ -26,19 +26,21 @@ function compute_ins_mse(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, subtitle)
         ins.firstDates, ins.tradeDates,
         ins.ecbRatechangeDates, ins.T0All, ins.TAll
       )
-      fAll, priceAll, innov = outputData.calculateRateAndRepricing(
+      fAll, zPredAll, innov = outputData.calculateRateAndRepricing(
       EAll, ins.zAll, ins.I_z_t, x_s, oAll,
       ins.oIndAll, ins.tcAll, θg,
       Int.(ins.n_z_t), ins.n_t, ins.n_s, ins.n_u
     )
     # Plot Forward Rate Curve (Should be done in Matlab instead)
-    plt1 = plots.plot3DCurve(ins.times, fAll, subtitle)
-    display(plt1)
-    print(subtitle)
-    println(" - Plot Done")
+    if subtitle != "No Plot"
+      plt1 = plots.plot3DCurve(ins.times, fAll, subtitle)
+      display(plt1)
+      print(subtitle)
+      println(" - Plot Done")
+    end
 
     mse, mae = calculateMSE(innov)
-    return mse, mae
+    return mse, mae, zPredAll
 end
 
 # — Run NM on a single chunk, return new ψ tuple
@@ -64,7 +66,7 @@ function nm_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
         A_c, B_c, D_c, G_c,
         fd_c, td_c, ecb_c, T0_c, TC_c,
         a0, Σx, Σw, Σv, θF, θg;
-        tol=1e5, maxiter=20, verbose=true,
+        tol=1e5, maxiter=5, verbose=true,
         Newton_bool=false, θg_bool=true
       )
     return (Σw_new, Σv_new, a0_new, Σx_new, θF_new, θg_new)
@@ -73,13 +75,13 @@ end
 # — Rolling-window NM: update ψ only if it improves full in-sample MSE
 function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, ψ0::NTuple{6,Any})
     ψ = ψ0
-    baseline_mse, baseline_mae = compute_ins_mse(ψ, ins, "Regular")
+    baseline_mse, baseline_mae,_ = compute_ins_mse(ψ, ins, "Regular")
     @printf("Baseline in-sample → MSE = %.5e, MAE = %.5e\n",
             baseline_mse, baseline_mae)
 
     # chunk size = 1% of total time steps
     total_t = ins.n_t + outs.n_t
-    chunk_sz = max(1, floor(Int, 0.03 * total_t)) #3% works on CJ's Mac
+    chunk_sz = max(1, floor(Int, 0.001 * total_t)) #3% works on CJ's Mac
     ranges = [s:min(s+chunk_sz-1, ins.n_t) for s in 1:chunk_sz:ins.n_t]
 
     for (ci, idxr) in enumerate(ranges)
@@ -87,7 +89,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
                 ci, length(ranges), first(idxr), last(idxr))
         # candidate ψ
         ψ_cand = nm_on_chunk(ψ, ins, idxr)
-        mse_cand, mae_cand = compute_ins_mse(ψ_cand, ins, "Newton Nr: $ci")
+        mse_cand, mae_cand, _ = compute_ins_mse(ψ_cand, ins, "Newton Nr: $ci")
         delta = mse_cand - baseline_mse
         @printf("Old MSE = %.5e, New MSE = %.5e, Δ = %+.5e\n",
                 baseline_mse, mse_cand, delta)
@@ -97,6 +99,9 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
         else
             println("⇒ Rejected; retained previous ψ.")
         end
+        if ci == 1
+          break
+        end
     end
     return ψ
 end
@@ -104,7 +109,7 @@ end
 # === MAIN ===
 echo_clear()
 println("Loading data...")
-data = loadData.run("Efficient-Kalman-Filter/Data")
+data = loadData.run(joinpath("Efficient-Kalman-Filter","Data"))
 split = loadData.split_data(data, 0.8)
 ins, outs = split.insample, split.outsample
 
@@ -122,10 +127,13 @@ ins, outs = split.insample, split.outsample
 ψ_final = rolling_optimize(ins, outs, ψ0)
 
 # final in-sample comparison
+mse_reg, mae_reg, _ = compute_ins_mse(ψ0, outs, "Regular")
+mse_NM, mae_NM, zPredNMAll = compute_ins_mse(ψ_final, outs, "Final - Newton")
+
 println("\n=== Final out-sample Comparison ===")
-@printf("Initial ψ₀ → MSE = %.5e, MAE = %.5e\n", compute_ins_mse(ψ0, outs, "Regular")...)
-@printf("Final ψ_final → MSE = %.5e, MAE = %.5e\n", compute_ins_mse(ψ_final, outs, "Final - Newton")...)
-# println(compute_ins_mse(ψ_final, outs)[1] < compute_ins_mse(ψ0, outs)[1] ?
-#         "NM better MSE" : "Reg better MSE")
-# println(compute_ins_mse(ψ_final, outs, )[2] < compute_ins_mse(ψ0, outs)[2] ?
-#         "NM better MAE" : "Reg better MAE")
+@printf("Initial ψ₀ → MSE = %.5e, MAE = %.5e\n", mse_reg, mae_reg)
+@printf("Final ψ_final → MSE = %.5e, MAE = %.5e\n", mse_NM, mae_NM)
+@printf("RKF → MSE = %.5e, MAE = %.5e\n", outputData.calculateMSE(outs.innovationAll)...)
+
+zPredRKFALL = outs.zPredAll 
+outputData.write_results(zPredNMAll, zPredRKFALL);
