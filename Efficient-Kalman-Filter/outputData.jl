@@ -16,7 +16,7 @@ function calculateRateAndRepricing(EAll, zAll, I_z_t, xAll, oAll, oIndAll, tcAll
     E = EAll[1]
     n_rows = size(θg, 1)  # 3661, consistent with the rest
     fAll = zeros(n_rows, T)    
-    priceAll = Vector{Vector{Float64}}(undef, T)
+    zPredAll = Vector{Vector{Float64}}(undef, T)
     innovationAll = deepcopy(zAll);
 
     for t in 1:T
@@ -35,12 +35,12 @@ function calculateRateAndRepricing(EAll, zAll, I_z_t, xAll, oAll, oIndAll, tcAll
 
         fAll[:, t] = [θg E] * x[1:(n_u)]
 
-        priceAll[t] = g
+        zPredAll[t] = H_t*x + u_t
 
         innovationAll[t] = zAll[t] - H_t*x - u_t #Maybe zAll[t] - H_t*x_pred -u_t
     end
 
-    return fAll, priceAll, innovationAll;
+    return fAll, zPredAll, innovationAll;
 end
 
 
