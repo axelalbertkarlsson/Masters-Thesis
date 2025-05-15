@@ -80,6 +80,15 @@ end
     % Ef behövs för att det är vårt Q_K som vi har i \psi_0 /CJ
     %save('pricingData.mat', 'idContracts', 'firstDates', 'tradeDates','TAll', 'T0All', 'oIndAll', 'tcAll');
 % Kalman filter: I^z_t, G_t, D_t, A_t, B_t
+    innovationAll = cell(length(times), 1);
+    zPredAll = cell(length(times), 1);
+    for t=1:length(times)
+        [g, G] = taylorInstrPC(K.pl, K.atAll{t}, K.oAll{t}, K.oIndAll{t}, K.tcAll{t}, K.x{t}(1:K.ns));
+        H = [G K.Iz{t}];
+        z_pred = H*K.x{t};
+        zPredAll{t} = z_pred;
+        innovationAll{t} = zAll{t}-z_pred;
+    end
     I_z_t = cellfun(@full, K.Iz, 'UniformOutput',false);
     G_t = cellfun(@full, K.G, 'UniformOutput',false);
     D_t = cellfun(@full, K.D, 'UniformOutput',false);
@@ -93,7 +102,7 @@ end
     n_c = K.nc; %x_c dimension scalar (also used as nSteps) /CJ
     n_p = K.np; %x_p dimension scalar /CJ
     n_t = K.nt; %observation dimension scalar /CJ
-    %save('refKFVariables.mat', 'I_z_t', 'G_t', 'D_t','A_t','B_t','f_t', 'n_x', 'n_z_t', 'n_u', 'n_s', 'n_c', 'n_p', 'n_t'); 
+    %save('refKFVariables.mat', 'I_z_t', 'G_t', 'D_t','A_t','B_t','f_t', 'n_x', 'n_z_t', 'n_u', 'n_s', 'n_c', 'n_p', 'n_t','innovationAll','zPredAll'); 
 % Behövs inte från CurvesInit
     % times behövs inte vad jag kan se /CJ
     % usedInstr behövs inte vad jag kan se /CJ
