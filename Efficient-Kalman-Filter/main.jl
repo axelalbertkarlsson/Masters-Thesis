@@ -94,7 +94,6 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
         if mse_cand < baseline_mse
             ψ, baseline_mse, baseline_mae = ψ_cand, mse_cand, mae_cand
             println("⇒ Accepted new ψ; updated baseline.")
-            break
         else
             println("⇒ Rejected; retained previous ψ.")
         end
@@ -123,7 +122,7 @@ ins, outs = split.insample, split.outsample
 ψ_final = rolling_optimize(ins, outs, ψ0)
 
 # final in-sample comparison
-println("\n=== Final in-sample Comparison ===")
+println("\n=== Final out-sample Comparison ===")
 @printf("Initial ψ₀ → MSE = %.5e, MAE = %.5e\n", compute_ins_mse(ψ0, outs, "Regular")...)
 @printf("Final ψ_final → MSE = %.5e, MAE = %.5e\n", compute_ins_mse(ψ_final, outs, "Final - Newton")...)
 # println(compute_ins_mse(ψ_final, outs)[1] < compute_ins_mse(ψ0, outs)[1] ?
