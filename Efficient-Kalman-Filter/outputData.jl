@@ -3,12 +3,12 @@ module outputData
 
 include("pricingFunctions.jl")
 
-using LinearAlgebra, Printf
+using LinearAlgebra, Printf, MAT
 using .pricingFunctions
 
 import Statistics
 
-export calculateMSE, calculateRateAndRepricing
+export calculateMSE, calculateRateAndRepricing, write_results
 
 function calculateRateAndRepricing(EAll, zAll, I_z_t, xAll, oAll, oIndAll, tcAll, θg, n_z_t,n_t, n_s, n_u)
     # Initialization
@@ -63,6 +63,16 @@ function calculateMSE(innovationAll)
     println("--------------------------------------------------")
 
     return mse_reg, mae_reg    
+end
+
+function write_results(zPredNMAll, zPredRKFALL)
+    to_cell(x) = [reshape(v, :, 1) for v in x]
+    to_anycell(x) = Any[to_cell(x)...] # Ensure Vector{Any}
+
+    matopen("results.mat", "w") do f
+        write(f, "zPredNMAll", to_anycell(zPredNMAll))
+        write(f, "zPredRKFALL", to_anycell(zPredRKFALL))
+    end
 end
 
 end # module
