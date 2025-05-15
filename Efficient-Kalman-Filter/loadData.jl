@@ -35,6 +35,7 @@ struct KalmanData{T<:AbstractFloat}
     G_t::Vector{Matrix{T}}
     I_z_t::Vector{Matrix{T}}
     f_t::Matrix{T}
+    innovationAll::Vector{Vector{T}}
 
     # sizes
     n_c::Int
@@ -90,6 +91,8 @@ function load64(data_folder::String)
     Dt  = [Float64.(m) for m in vec(vars[:D_t])]
     Gt  = [Float64.(m) for m in vec(vars[:G_t])]
     Iz  = [Float64.(m) for m in vec(vars[:I_z_t])]
+    raw_innovation = vec(vars[:innovationAll])  
+    innovation64   = [Float64.(vec(m)) for m in raw_innovation]
 
     ft  = Float64.(vars[:f_t])
 
@@ -107,7 +110,7 @@ function load64(data_folder::String)
       # Psi0
       Σv, Σw, Σx, ax, θF, θg,
       # RefKF
-      At, Bt, Dt, Gt, Iz, ft,
+      At, Bt, Dt, Gt, Iz, ft,innovation64, 
       # sizes
       nc, np, ns, n_t, nu, nx, n_z
     )
@@ -144,6 +147,7 @@ function convert_to_f32(kd::KalmanData{Float64})
       [Float32.(m) for m in kd.G_t],
       [Float32.(m) for m in kd.I_z_t],
       Float32.(kd.f_t),
+      [Float32.(v) for v in kd.innovationAll],
       # sizes
       kd.n_c, kd.n_p, kd.n_s, kd.n_t, kd.n_u, kd.n_x,
       Float32.(kd.n_z_t)
@@ -187,6 +191,7 @@ function split_data(kd::KalmanData{T}, ratio::Float64) where {T}
       kd.A_t[1:idx], kd.B_t[1:idx], kd.D_t[1:idx],
       kd.G_t[1:idx], kd.I_z_t[1:idx],
       kd.f_t[1:idx, :],
+      kd.innovationAll[1:idx],
       kd.n_c, kd.n_p, kd.n_s, idx, kd.n_u, kd.n_x,
       kd.n_z_t[1:idx]
     )
@@ -208,6 +213,7 @@ function split_data(kd::KalmanData{T}, ratio::Float64) where {T}
       kd.D_t[idx+1:end], kd.G_t[idx+1:end],
       kd.I_z_t[idx+1:end],
       kd.f_t[idx+1:end, :],
+      kd.innovationAll[idx+1:end],
       kd.n_c, kd.n_p, kd.n_s, n-idx, kd.n_u, kd.n_x,
       kd.n_z_t[idx+1:end]
     )
