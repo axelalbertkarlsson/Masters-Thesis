@@ -121,7 +121,7 @@ Given a vector of vectors `innovationAll`, this function:
 - Plots a histogram of all innovations.
 - Plots a zoomed-in histogram for values in `hist_range`.
 """
-function plot_innovations(innovationAll; hist_range=(-0.0005, 0.0005), bins_all=1000, bins_zoom=3000)
+function plot_innovations(innovationAll; hist_range=(-0.00015, 0.00015), bins_all=1000, bins_zoom=3000)
     row_indices = Int[]
     col_indices = Int[]
     col_values = Float64[]
