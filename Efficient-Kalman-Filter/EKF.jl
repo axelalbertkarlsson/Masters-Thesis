@@ -46,8 +46,19 @@ function kalman_filter_smoother_lag1(zAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p,
         H_t, u_t, g, Gradient = pricingFunctions.taylorApprox(oAll[t], oIndAll[t], tcAll[t], x_pred[t][1:n_s], I_z_t[t], n_z_t[t])
         R_t = GAll[t]*Σv*GAll[t]'
         jitter = 1e-8
-        K[t] = P_pred[t]*H_t' * inv(H_t*P_pred[t]*H_t' + R_t + jitter*I)
-        #K[t] = P_pred[t]*H_t' * inv(H_t*P_pred[t]*H_t' + R_t)
+        test1 = H_t*P_pred[t]*H_t' + R_t + jitter*I
+        test2 = P_pred[t]*H_t'
+        if any(isnan, test1)
+            println(test1)
+            error("NaN detected in test1 at time t = $t")
+        end
+        if any(isnan, test2)
+            println(test2)
+            error("NaN detected in test2 at time t = $t")
+        end
+        K[t] = test2 * inv(test1)
+        # K[t] = P_pred[t]*H_t' * inv(H_t*P_pred[t]*H_t' + R_t + jitter*I)
+        # K[t] = P_pred[t]*H_t' * inv(H_t*P_pred[t]*H_t' + R_t)
 
         innovation = vec(zAll[t]) - H_t*x_pred[t] - u_t
         x_filt[t] = x_pred[t] + K[t]*innovation
@@ -76,7 +87,8 @@ function kalman_filter_smoother_lag1(zAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p,
         P_lag[t] = P_filt[t]*S[t-1]' + S[t]*(P_lag[t+1] - AAll[t+1]*Diagonal(θF)*BAll[t+1]*P_filt[t])*S[t-1]'
     end
 
-    return x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll
+    return x_pred, P_pred, x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll
+    
 end
 
 function NM(
@@ -256,7 +268,7 @@ function NM(
     a0_opt, Σx_opt, Σw_opt, Σv_opt, θF_opt, θg_opt = psi_to_parameters(ψ_opt, θg_bool)
 
     # run full smoother
-    x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll =
+    x_pred, P_pred, x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll =
         kalman_filter_smoother_lag1(
             zAll, oIndAll, tcAll, I_z_t, f_t,
             n_c, n_p, n_s, n_t, n_u, n_x, n_z_t,
