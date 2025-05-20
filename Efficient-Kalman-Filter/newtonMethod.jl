@@ -4,10 +4,10 @@ using ReverseDiff, LinearAlgebra
 using Optim, LineSearches
 using ForwardDiff, ProgressMeter
 
-export newtonStep, newtonOptimize, newtonOptimizeBroyden, optimize_parameters, optimize_bfgs
+export newtonStep, newtonOptimize, newtonOptimizeBroyden, optimize_parameters, optimize_bfgs, optimize_parameters_forwarddiff
 
 # === Build & compile a single ReverseDiff tape for gradients ===
-function setup_tape!(f::Function, x0::Vector{Float64})
+function setup_tape!(f, x0::Vector{Float64})
     @info "Building gradient tape…"
     tape = ReverseDiff.GradientTape(f, x0)
     @info "Compiling gradient tape…"
@@ -83,7 +83,7 @@ end
 Returns the minimizer as Vector{Float64}.
 """
 function optimize_parameters(
-    f::Function,
+    f,
     x0::Vector{Float64};
     tol::Float64      = 1e-6,
     maxiter::Int      = 10,
@@ -124,6 +124,46 @@ function optimize_bfgs(f, x0; tol=1e-6, maxiter=10, verbose=false)
       store_trace= verbose
     )
     return Optim.minimizer(res)
+end
+
+function optimize_parameters_forwarddiff(
+  f,
+  x0::Vector{Float64};
+  tol::Float64      = 1e-6,
+  maxiter::Int      = 10,
+  verbose::Bool     = true
+)
+
+  @info "Building Forward gradient tape…"
+  # Define gradient function using ForwardDiff
+  grad_f = x -> ForwardDiff.gradient(f, x)
+
+  @info "Copying gradient tape…"
+  grad! = (g, x) -> copyto!(g, grad_f(x))
+
+  # Setup optimizer (BFGS with line search)
+  inner_method = BFGS(
+      alphaguess = InitialStatic(alpha=1e-2),
+      linesearch = BackTracking()
+  )
+
+  opts = Optim.Options(
+      g_tol = tol,
+      iterations = maxiter,
+      store_trace = verbose,
+      show_trace = verbose
+  )
+
+  @info "Starting ForwardDiff BFGS optimization…"
+  res = optimize(f, grad!, x0, inner_method, opts)
+
+  if Optim.converged(res)
+      @info "ForwardDiff BFGS converged in $(res.iterations) steps"
+  else
+      @warn "ForwardDiff BFGS did NOT converge" status=res
+  end
+
+  return Optim.minimizer(res)
 end
 
 end # module

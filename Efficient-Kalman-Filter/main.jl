@@ -74,7 +74,7 @@ function em_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
       A_c, B_c, D_c, G_c,
       fd_c, td_c, ecb_c, T0_c, TC_c,
       ψ,
-      maxiter=1, tol=1e5, verbose=true,
+      maxiter=5, tol=1e5, verbose=true,
       θg_bool=false
     )
   return (Σw_new, Σv_new, a0_new, Σx_new, θF_new, θg_new)
@@ -103,7 +103,7 @@ function nm_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
         A_c, B_c, D_c, G_c,
         fd_c, td_c, ecb_c, T0_c, TC_c,
         a0, Σx, Σw, Σv, θF, θg;
-        tol=1e5, maxiter=1, verbose=true,
+        tol=1e5, maxiter=20, verbose=true,
         Newton_bool=false, θg_bool=false
       )
     return (Σw_new, Σv_new, a0_new, Σx_new, θF_new, θg_new)
@@ -118,7 +118,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
     # chunk size = 1% of total time steps
     total_t = ins.n_t + outs.n_t
-    chunk_sz = max(1, floor(Int, 0.001 * total_t)) #3% works on CJ's Mac with theta_g (0.0513 exactly one year)
+    chunk_sz = max(1, floor(Int, 0.0513 * total_t)) #3% works on CJ's Mac with theta_g (0.0513 exactly one year)
     ranges = [s:min(s+chunk_sz-1, ins.n_t) for s in 1:chunk_sz:ins.n_t]
 
     ψ_cand_NM = ψ

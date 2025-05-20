@@ -11,6 +11,51 @@ using .pricingFunctions
 
 export kalman_filter_smoother_lag1, NM, calcOutOfSample, EM
 
+struct Q2Objective
+    unpack_vecψ
+    x_s
+    P_s
+    Hprev
+    uprev
+    E11
+    E10
+    E00
+    AAll
+    BAll
+    DAll
+    GAll
+    zAll
+    n_t
+    θF_size
+    jitter
+end
+
+function (q::Q2Objective)(vecψ)
+    Σw_c, Σv_c, θF_c, θg_c = q.unpack_vecψ(vecψ)
+    Q2 = zero(eltype(Σw_c))
+
+    Rv = q.GAll[1]*Σv_c*q.GAll[1]' + q.jitter*I
+    δz = q.zAll[1] .- q.Hprev[1]*q.x_s[1] .- q.uprev[1]
+    HpPH = q.Hprev[1]*q.P_s[1]*q.Hprev[1]'
+    L = cholesky(Symmetric(Rv))
+    Q2 += 2 * sum(log, diag(L.L)) + δz'*(Rv\δz) + tr(Rv \ HpPH)
+
+    for t in 2:q.n_t
+        Rv = q.GAll[t]*Σv_c*q.GAll[t]' + q.jitter*I
+        δz = q.zAll[t] .- q.Hprev[t]*q.x_s[t] .- q.uprev[t]
+        HpPH = q.Hprev[t]*q.P_s[t]*q.Hprev[t]'
+        Q2 += δz'*(Rv\δz) + tr(Rv \ HpPH) + 2 * sum(log, diag(cholesky(Symmetric(Rv)).L))
+
+        Fm = q.AAll[t]*Diagonal(θF_c)*q.BAll[t]
+        Rw = q.DAll[t]*Σw_c*q.DAll[t]' + q.jitter*I
+        tmp = Fm * q.E00[t]
+        resid = q.E11[t] - q.E10[t]*Fm' - Fm*q.E10[t]' + tmp*Fm'
+        Q2 += tr(Rw \ resid) + 2 * sum(log, diag(cholesky(Symmetric(Rw)).L))
+    end
+
+    return 0.5 * Q2
+end
+
 
 function EM(
     zAll, oIndAll, tcAll, I_z_t, f_t,
@@ -23,149 +68,100 @@ function EM(
     verbose::Bool=false,
     θg_bool::Bool=false
 )
-  # unpack initial ψ
-  Σw, Σv, a0, Σx, θF, θg = ψ0
+    Σw, Σv, a0, Σx, θF, θg = ψ0
+    jitter = 1e-8
 
-  # small diagonal jitter for stability
-  jitter = 1e-8
+    function make_packers(n_x, n_u, θF, θg, θg_bool)
+        function pack(Σw, Σv, θF, θg)
+            Lw = cholesky(Σw + jitter * I).L
+            Lv = cholesky(Σv + jitter * I).L
+            out = Float64[]
+            for i in 1:n_x, j in 1:i push!(out, Lw[i,j]) end
+            for i in 1:n_u, j in 1:i push!(out, Lv[i,j]) end
+            append!(out, θF)
+            θg_bool && append!(out, vec(θg))
+            return out
+        end
 
-  # — build pack / unpack once —
-  function make_packers(n_x, n_u, θF, θg, θg_bool)
-    function pack(Σw, Σv, θF, θg)
-      # add jitter before chol to ensure PD
-      Lw = cholesky(Σw + jitter*I, check=true).L
-      Lv = cholesky(Σv + jitter*I, check=true).L
+        function unpack(vecψ)
+            idx = 1
+            Lw = zeros(typeof(vecψ[1]), n_x, n_x)
+            for i in 1:n_x, j in 1:i Lw[i,j] = vecψ[idx]; idx += 1 end
+            Lv = zeros(typeof(vecψ[1]), n_u, n_u)
+            for i in 1:n_u, j in 1:i Lv[i,j] = vecψ[idx]; idx += 1 end
+            Σw_c = Lw * Lw' + jitter * I
+            Σv_c = Lv * Lv' + jitter * I
+            θF_c = vecψ[idx:idx+length(θF)-1]; idx += length(θF)
+            θg_c = θg_bool ? reshape(vecψ[idx:idx+length(vec(θg))-1], size(θg)) : θg
+            return Σw_c, Σv_c, θF_c, θg_c
+        end
 
-      out = Float64[]
-      for i in 1:n_x, j in 1:i
-        push!(out, Lw[i,j])
-      end
-      for i in 1:n_u, j in 1:i
-        push!(out, Lv[i,j])
-      end
-      append!(out, θF)
-      θg_bool && append!(out, vec(θg))
-      return out
+        return pack, unpack
     end
 
-    function unpack(vecψ)
-      idx = 1
-      Lw = zeros(typeof(vecψ[1]), n_x, n_x)
-      for i in 1:n_x, j in 1:i
-        Lw[i,j] = vecψ[idx]; idx += 1
-      end
-      Lv = zeros(typeof(vecψ[1]), n_u, n_u)
-      for i in 1:n_u, j in 1:i
-        Lv[i,j] = vecψ[idx]; idx += 1
-      end
+    pack, unpack_vecψ = make_packers(n_x, n_u, θF, θg, θg_bool)
+    prev_Q = -Inf
 
-      # reconstruct covariances and add jitter to keep PD
-      Σw_c = Lw*Lw' + jitter*I
-      Σv_c = Lv*Lv' + jitter*I
+    for k in 1:maxiter
+        x_f, P_f, x_s, P_s, P_lag, oAll, EAll = kalman_filter_smoother_lag1(
+            zAll, oIndAll, tcAll, I_z_t, f_t,
+            n_c, n_p, n_s, n_t, n_u, n_x, n_z_t,
+            AAll, BAll, DAll, GAll,
+            Σw, Σv, a0, Σx, θF, θg,
+            firstDates, tradeDates, ecbRatechangeDates, T0All, TAll
+        )
 
-      θF_c = vecψ[idx : idx+length(θF)-1]
-      idx += length(θF)
+        Hprev = Vector{Matrix{Float64}}(undef, n_t)
+        uprev = Vector{Vector{Float64}}(undef, n_t)
+        for t in 1:n_t
+            Hprev[t], uprev[t], _, _ = taylorApprox(oAll[t], oIndAll[t], tcAll[t], x_s[t][1:n_s], I_z_t[t], n_z_t[t])
+        end
 
-      θg_c = θg_bool ? reshape(vecψ[idx : idx+length(vec(θg))-1], size(θg)) : θg
+        E11 = Vector{Matrix{Float64}}(undef, n_t)
+        E10 = Vector{Matrix{Float64}}(undef, n_t)
+        E00 = Vector{Matrix{Float64}}(undef, n_t)
+        E11[1] = zeros(n_x,n_x); E10[1] = zeros(n_x,n_x); E00[1] = zeros(n_x,n_x)
+        for t in 2:n_t
+            E11[t] = P_s[t] + x_s[t]*x_s[t]'
+            E10[t] = P_lag[t] + x_s[t]*x_s[t-1]'
+            E00[t] = P_s[t-1] + x_s[t-1]*x_s[t-1]'
+        end
 
-      return Σw_c, Σv_c, θF_c, θg_c
+        q2obj_struct = Q2Objective(unpack_vecψ, x_s, P_s, Hprev, uprev, E11, E10, E00, AAll, BAll, DAll, GAll, zAll, n_t, size(θF), jitter)
+
+        vecψ0 = pack(Σw, Σv, θF, θg)
+        
+        #vecψ_opt = optimize_parameters(q2obj_struct, vecψ0; tol=1e-8, maxiter)
+        vecψ_opt = optimize_parameters_forwarddiff(q2obj_struct, vecψ0; tol=1e-8, maxiter=4)
+
+        Σw, Σv, θF, θg = unpack_vecψ(vecψ_opt)
+
+        a0 = x_s[1]
+        Σx = P_s[1]
+
+        Q1 = n_x*log(2π) + logdet(Σx) + tr(inv(Σx)*(P_s[1] + (x_s[1]-a0)*(x_s[1]-a0)'))
+        Q2 = 2 * q2obj_struct(pack(Σw, Σv, θF, θg))
+        Qtot = Q1 + Q2
+
+        if verbose
+            @printf(" EM iter %2d: Q = %.6e   ΔQ = %.3e\n", k, Qtot, Qtot - prev_Q)
+        end
+        if k > 1 && abs(Qtot - prev_Q) < tol
+            verbose && println(" EM converged.")
+            break
+        end
+        prev_Q = Qtot
     end
 
-    return pack, unpack
-  end
-
-  pack, unpack_vecψ = make_packers(n_x, n_u, θF, θg, θg_bool)
-
-  prev_Q = -Inf
-  for k in 1:maxiter
-    # — E-Step —
-    x_f, P_f, x_s, P_s, P_lag, oAll, EAll =
-      kalman_filter_smoother_lag1(
+    return kalman_filter_smoother_lag1(
         zAll, oIndAll, tcAll, I_z_t, f_t,
         n_c, n_p, n_s, n_t, n_u, n_x, n_z_t,
         AAll, BAll, DAll, GAll,
         Σw, Σv, a0, Σx, θF, θg,
         firstDates, tradeDates, ecbRatechangeDates, T0All, TAll
-      )
-
-    # linearize around the smoother draws
-    Hprev = Vector{Matrix{Float64}}(undef, n_t)
-    uprev = Vector{Vector{Float64}}(undef, n_t)
-    for t in 1:n_t
-      Hprev[t], uprev[t], _, _ =
-        taylorApprox(oAll[t], oIndAll[t], tcAll[t],
-                     x_s[t][1:n_s], I_z_t[t], n_z_t[t])
-    end
-
-    # build E‐matrices
-    E11 = Vector{Matrix{Float64}}(undef, n_t)
-    E10 = Vector{Matrix{Float64}}(undef, n_t)
-    E00 = Vector{Matrix{Float64}}(undef, n_t)
-    E11[1] = zeros(n_x,n_x);  E10[1] = zeros(n_x,n_x);  E00[1] = zeros(n_x,n_x)
-    for t in 2:n_t
-      E11[t] = P_s[t]        + x_s[t]*x_s[t]'
-      E10[t] = P_lag[t]      + x_s[t]*x_s[t-1]'
-      E00[t] = P_s[t-1]      + x_s[t-1]*x_s[t-1]'
-    end
-
-    # — M-Step: Q₂ objective with jitter —
-    function Q2obj(vecψ)
-      Σw_c, Σv_c, θF_c, θg_c = unpack_vecψ(vecψ)
-      Q2 = zero(eltype(Σw_c))
-      for t in 1:n_t
-        Rv = GAll[t]*Σv_c*GAll[t]' + jitter*I
-        δz = zAll[t] .- Hprev[t]*x_s[t] .- uprev[t]
-        Q2 += logdet(Rv) +
-              tr(Rv \ (δz*δz' + Hprev[t]*P_s[t]*Hprev[t]'))
-
-        if t > 1
-          Fm = AAll[t]*Diagonal(θF_c)*BAll[t]
-          Rw = DAll[t]*Σw_c*DAll[t]' + jitter*I
-          resid = E11[t] .- E10[t]*Fm' .- Fm*E10[t]' .+ Fm*E00[t]*Fm'
-          Q2 += logdet(Rw) + tr(Rw \ resid)
-        end
-      end
-      return 0.5 * Q2
-    end
-
-    # run the inner optimizer
-    vecψ0    = pack(Σw, Σv, θF, θg)
-    vecψ_opt = optimize_parameters(Q2obj, vecψ0; tol=1e-8, maxiter)
-    Σw, Σv, θF, θg = unpack_vecψ(vecψ_opt)
-
-    # analytic Q₁ update
-    a0 = x_s[1]
-    Σx = P_s[1]
-
-    # check convergence in total Q
-    Q1   = n_x*log(2π) + logdet(Σx) +
-           tr(inv(Σx)*(P_s[1] + (x_s[1]-a0)*(x_s[1]-a0)'))
-    Q2   = 2 * Q2obj(pack(Σw,Σv,θF,θg))
-    Qtot = Q1 + Q2
-
-    if verbose
-      @printf(" EM iter %2d: Q = %.6e   ΔQ = %.3e\n",
-              k, Qtot, Qtot - prev_Q)
-    end
-    if k>1 && abs(Qtot - prev_Q) < tol
-      verbose && println(" EM converged.")
-      break
-    end
-    prev_Q = Qtot
-  end
-
-    # — one final smoother pass with the final ψ estimates —
-    x_f, P_f, x_s, P_s, P_lag, oAll, EAll =
-    kalman_filter_smoother_lag1(
-      zAll, oIndAll, tcAll, I_z_t, f_t,
-      n_c, n_p, n_s, n_t, n_u, n_x, n_z_t,
-      AAll, BAll, DAll, GAll,
-      Σw, Σv, a0, Σx, θF, θg,
-      firstDates, tradeDates, ecbRatechangeDates, T0All, TAll
-    )
-
-  return x_f, P_f, x_s, P_s, P_lag, oAll, EAll, a0, Σx, Σw, Σv, θF, θg
+    )..., a0, Σx, Σw, Σv, θF, θg
 end
+
 
 
 
@@ -452,6 +448,7 @@ function NM(
         ψ_opt = newtonOptimize(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
     else
         #ψ_opt = newtonOptimizeBroyden(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
+        println(size(ψ0))
         ψ_opt = optimize_parameters(fobj, ψ0;
                                 tol=tol,
                                 maxiter=maxiter,
