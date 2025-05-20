@@ -65,13 +65,33 @@ function calculateMSE(innovationAll)
     return mse_reg, mae_reg    
 end
 
-function write_results(zPredNMAll, zPredRKFALL)
-    to_cell(x) = [reshape(v, :, 1) for v in x]
-    to_anycell(x) = Any[to_cell(x)...] # Ensure Vector{Any}
+function write_results(
+    filename::AbstractString,
+    zPredNMAll, innovationAll_NM, innovation_likelihood_NM,
+    zPredEMAll, innovationAll_EM, innovation_likelihood_EM,
+    zPredRKFAll, innovationAll_RKF
+)
+    # helper: wrap every element (scalar or vector) into a column vector
+    function cellify(x)
+        cells = Vector{Any}(undef, length(x))
+        for (i,v) in enumerate(x)
+            arr = v isa AbstractArray ? v : [v]    # wrap scalars
+            cells[i] = reshape(arr, :, 1)          # make it a column
+        end
+        return cells
+    end
 
-    matopen("results.mat", "w") do f
-        write(f, "zPredNMAll", to_anycell(zPredNMAll))
-        write(f, "zPredRKFALL", to_anycell(zPredRKFALL))
+    matopen(filename, "w") do f
+        write(f, "zPredNMAll",               cellify(zPredNMAll))
+        write(f, "innovationAll_NM",         cellify(innovationAll_NM))
+        write(f, "innovation_likelihood_NM", cellify(innovation_likelihood_NM))
+
+        write(f, "zPredEMAll",               cellify(zPredEMAll))
+        write(f, "innovationAll_EM",         cellify(innovationAll_EM))
+        write(f, "innovation_likelihood_EM", cellify(innovation_likelihood_EM))
+
+        write(f, "zPredRKFAll",              cellify(zPredRKFAll))
+        write(f, "innovationAll_RKF",        cellify(innovationAll_RKF))
     end
 end
 

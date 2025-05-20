@@ -87,7 +87,7 @@ function optimize_parameters(
     x0::Vector{Float64};
     tol::Float64      = 1e-6,
     maxiter::Int      = 10,
-    verbose::Bool     = false
+    verbose::Bool     = true
 )
     # compile tape + gradient mutator
     tape = setup_tape!(f, x0)

@@ -1,7 +1,7 @@
 #EKF.jl
 module EKF
 
-using LinearAlgebra
+using LinearAlgebra, Printf
 
 include("pricingFunctions.jl")
 include("newtonMethod.jl")
@@ -9,7 +9,214 @@ include("newtonMethod.jl")
 using .newtonMethod
 using .pricingFunctions
 
-export kalman_filter_smoother_lag1, NM
+export kalman_filter_smoother_lag1, NM, calcOutOfSample, EM
+
+
+function EM(
+    zAll, oIndAll, tcAll, I_z_t, f_t,
+    n_c, n_p, n_s, n_t, n_u, n_x, n_z_t,
+    AAll, BAll, DAll, GAll,
+    firstDates, tradeDates, ecbRatechangeDates, T0All, TAll,
+    ψ0;
+    maxiter::Int=20,
+    tol::Float64=1e-6,
+    verbose::Bool=false,
+    θg_bool::Bool=false
+)
+  # unpack initial ψ
+  Σw, Σv, a0, Σx, θF, θg = ψ0
+
+  # small diagonal jitter for stability
+  jitter = 1e-8
+
+  # — build pack / unpack once —
+  function make_packers(n_x, n_u, θF, θg, θg_bool)
+    function pack(Σw, Σv, θF, θg)
+      # add jitter before chol to ensure PD
+      Lw = cholesky(Σw + jitter*I, check=true).L
+      Lv = cholesky(Σv + jitter*I, check=true).L
+
+      out = Float64[]
+      for i in 1:n_x, j in 1:i
+        push!(out, Lw[i,j])
+      end
+      for i in 1:n_u, j in 1:i
+        push!(out, Lv[i,j])
+      end
+      append!(out, θF)
+      θg_bool && append!(out, vec(θg))
+      return out
+    end
+
+    function unpack(vecψ)
+      idx = 1
+      Lw = zeros(typeof(vecψ[1]), n_x, n_x)
+      for i in 1:n_x, j in 1:i
+        Lw[i,j] = vecψ[idx]; idx += 1
+      end
+      Lv = zeros(typeof(vecψ[1]), n_u, n_u)
+      for i in 1:n_u, j in 1:i
+        Lv[i,j] = vecψ[idx]; idx += 1
+      end
+
+      # reconstruct covariances and add jitter to keep PD
+      Σw_c = Lw*Lw' + jitter*I
+      Σv_c = Lv*Lv' + jitter*I
+
+      θF_c = vecψ[idx : idx+length(θF)-1]
+      idx += length(θF)
+
+      θg_c = θg_bool ? reshape(vecψ[idx : idx+length(vec(θg))-1], size(θg)) : θg
+
+      return Σw_c, Σv_c, θF_c, θg_c
+    end
+
+    return pack, unpack
+  end
+
+  pack, unpack_vecψ = make_packers(n_x, n_u, θF, θg, θg_bool)
+
+  prev_Q = -Inf
+  for k in 1:maxiter
+    # — E-Step —
+    x_f, P_f, x_s, P_s, P_lag, oAll, EAll =
+      kalman_filter_smoother_lag1(
+        zAll, oIndAll, tcAll, I_z_t, f_t,
+        n_c, n_p, n_s, n_t, n_u, n_x, n_z_t,
+        AAll, BAll, DAll, GAll,
+        Σw, Σv, a0, Σx, θF, θg,
+        firstDates, tradeDates, ecbRatechangeDates, T0All, TAll
+      )
+
+    # linearize around the smoother draws
+    Hprev = Vector{Matrix{Float64}}(undef, n_t)
+    uprev = Vector{Vector{Float64}}(undef, n_t)
+    for t in 1:n_t
+      Hprev[t], uprev[t], _, _ =
+        taylorApprox(oAll[t], oIndAll[t], tcAll[t],
+                     x_s[t][1:n_s], I_z_t[t], n_z_t[t])
+    end
+
+    # build E‐matrices
+    E11 = Vector{Matrix{Float64}}(undef, n_t)
+    E10 = Vector{Matrix{Float64}}(undef, n_t)
+    E00 = Vector{Matrix{Float64}}(undef, n_t)
+    E11[1] = zeros(n_x,n_x);  E10[1] = zeros(n_x,n_x);  E00[1] = zeros(n_x,n_x)
+    for t in 2:n_t
+      E11[t] = P_s[t]        + x_s[t]*x_s[t]'
+      E10[t] = P_lag[t]      + x_s[t]*x_s[t-1]'
+      E00[t] = P_s[t-1]      + x_s[t-1]*x_s[t-1]'
+    end
+
+    # — M-Step: Q₂ objective with jitter —
+    function Q2obj(vecψ)
+      Σw_c, Σv_c, θF_c, θg_c = unpack_vecψ(vecψ)
+      Q2 = zero(eltype(Σw_c))
+      for t in 1:n_t
+        Rv = GAll[t]*Σv_c*GAll[t]' + jitter*I
+        δz = zAll[t] .- Hprev[t]*x_s[t] .- uprev[t]
+        Q2 += logdet(Rv) +
+              tr(Rv \ (δz*δz' + Hprev[t]*P_s[t]*Hprev[t]'))
+
+        if t > 1
+          Fm = AAll[t]*Diagonal(θF_c)*BAll[t]
+          Rw = DAll[t]*Σw_c*DAll[t]' + jitter*I
+          resid = E11[t] .- E10[t]*Fm' .- Fm*E10[t]' .+ Fm*E00[t]*Fm'
+          Q2 += logdet(Rw) + tr(Rw \ resid)
+        end
+      end
+      return 0.5 * Q2
+    end
+
+    # run the inner optimizer
+    vecψ0    = pack(Σw, Σv, θF, θg)
+    vecψ_opt = optimize_parameters(Q2obj, vecψ0; tol=1e-8, maxiter)
+    Σw, Σv, θF, θg = unpack_vecψ(vecψ_opt)
+
+    # analytic Q₁ update
+    a0 = x_s[1]
+    Σx = P_s[1]
+
+    # check convergence in total Q
+    Q1   = n_x*log(2π) + logdet(Σx) +
+           tr(inv(Σx)*(P_s[1] + (x_s[1]-a0)*(x_s[1]-a0)'))
+    Q2   = 2 * Q2obj(pack(Σw,Σv,θF,θg))
+    Qtot = Q1 + Q2
+
+    if verbose
+      @printf(" EM iter %2d: Q = %.6e   ΔQ = %.3e\n",
+              k, Qtot, Qtot - prev_Q)
+    end
+    if k>1 && abs(Qtot - prev_Q) < tol
+      verbose && println(" EM converged.")
+      break
+    end
+    prev_Q = Qtot
+  end
+
+    # — one final smoother pass with the final ψ estimates —
+    x_f, P_f, x_s, P_s, P_lag, oAll, EAll =
+    kalman_filter_smoother_lag1(
+      zAll, oIndAll, tcAll, I_z_t, f_t,
+      n_c, n_p, n_s, n_t, n_u, n_x, n_z_t,
+      AAll, BAll, DAll, GAll,
+      Σw, Σv, a0, Σx, θF, θg,
+      firstDates, tradeDates, ecbRatechangeDates, T0All, TAll
+    )
+
+  return x_f, P_f, x_s, P_s, P_lag, oAll, EAll, a0, Σx, Σw, Σv, θF, θg
+end
+
+
+
+
+function calcOutOfSample(zAll, oIndAll, tcAll, I_z_t, n_c, n_s, n_t, n_x, n_z_t, AAll, BAll, DAll, GAll, Σw, Σv, a0, Σx, θF, θg, firstDates, tradeDates, ecbRatechangeDates, T0All,TAll)
+    T = n_t;
+
+    # Preallocate
+    x_pred = [zeros(n_x) for _ in 1:T]
+    P_pred = [zeros(n_x,n_x) for _ in 1:T]
+    x_filt = [zeros(n_x) for _ in 1:T]
+    P_filt = [zeros(n_x,n_x) for _ in 1:T]
+    K      = [zeros(n_x,n_x) for _ in 1:T]
+
+    oAll = [zeros(103, 22) for _ in 1:T]
+    EAll = [zeros(3661, 6) for _ in 1:T]
+
+    neg2ℓ_t = zeros(Float64, T) 
+    ε_t = Vector{Vector{Float64}}(undef, T) 
+    zPred_t = Vector{Vector{Float64}}(undef, T) 
+
+    x_pred[1] = AAll[1]*Diagonal(θF)*BAll[1]*a0
+    P_pred[1] = AAll[1]*Diagonal(θF)*BAll[1]*Σx*(AAll[1]*Diagonal(θF)*BAll[1])' + DAll[1]*Σw*DAll[1]'
+
+    # Kalman Filter
+    for t = 1:T
+        if t > 1
+            x_pred[t] = AAll[t]*Diagonal(θF)*BAll[t] * x_filt[t-1]
+            P_pred[t] = AAll[t]*Diagonal(θF)*BAll[t] * P_filt[t-1] * (AAll[t]*Diagonal(θF)*BAll[t])' + DAll[t]*Σw*DAll[t]'
+        end
+        oAll[t], EAll[t] = pricingFunctions.calcO(
+            firstDates[t],
+            tradeDates[t],
+            θg,
+            ecbRatechangeDates,
+            n_c,
+            n_z_t[t],
+            T0All[t],
+            TAll[t]
+        )
+        H_t, u_t, g, Gradient = pricingFunctions.taylorApprox(oAll[t], oIndAll[t], tcAll[t], x_pred[t][1:n_s], I_z_t[t], n_z_t[t])
+        R_t = GAll[t]*Σv*GAll[t]'
+        K[t] = P_pred[t]*H_t' * inv(H_t*P_pred[t]*H_t' + R_t)
+        S_t = H_t*P_pred[t]*H_t' + R_t
+        ε = vec(zAll[t]) - H_t*x_pred[t] - u_t
+        neg2ℓ_t[t] = logdet(S_t) + dot(ε, S_t\ε)
+        ε_t[t] = ε
+        zPred_t[t] = H_t*x_pred[t] + u_t
+    end
+        return zPred_t, ε_t, neg2ℓ_t
+end
 
 function kalman_filter_smoother_lag1(zAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p, n_s, n_t, n_u, n_x, n_z_t, AAll, BAll, DAll, GAll, Σw, Σv, a0, Σx, θF, θg, firstDates, tradeDates, ecbRatechangeDates, T0All,TAll)
     T = n_t;
@@ -99,6 +306,9 @@ function NM(
      # flatten ψ₀ with unconstrained params:
      #  - we store lower‐triangular entries of chol(Σ) (so PD is automatic)
      #  - we store unconstrained φ_F such that θ_F = tanh(φ_F)
+     Σx_0 = Symmetric((Σx_0 + Σx_0')/2)
+     Σw_0 = Symmetric((Σw_0 + Σw_0')/2)
+     Σv_0 = Symmetric((Σv_0 + Σv_0')/2)
      Lx0 = cholesky(Σx_0).L
      Lw0 = cholesky(Σw_0).L
      Lv0 = cholesky(Σv_0).L
@@ -131,17 +341,17 @@ function NM(
     # chunk lengths
     if (θg_bool)
         len_a0 = length(a0_0)
-        len_Sx = length(Σx_0)
-        len_Sw = length(Σw_0)
-        len_Sv = length(Σv_0)
+        len_Σx = length(Σx_0)
+        len_Σw = length(Σw_0)
+        len_Σv = length(Σv_0)
         len_g  = length(vec(θg_0))
         len_F  = length(θF_0)
         shape_g = size(θg_0)
     else
         len_a0 = length(a0_0)
-        len_Sx = length(Σx_0)
-        len_Sw = length(Σw_0)
-        len_Sv = length(Σv_0)
+        len_Σx = length(Σx_0)
+        len_Σw = length(Σw_0)
+        len_Σv = length(Σv_0)
         len_F  = length(θF_0)
     end
 
@@ -155,9 +365,9 @@ function NM(
         a0 = ψ[idx:idx+len_a0-1];                     idx += len_a0
       
         # Σx, Σw, Σv via their Cholesky factors
-        Lx_flat = ψ[idx:idx+len_Sx-1]; idx += len_Sx
-        Lw_flat = ψ[idx:idx+len_Sw-1]; idx += len_Sw
-        Lv_flat = ψ[idx:idx+len_Sv-1]; idx += len_Sv
+        Lx_flat = ψ[idx:idx+len_Σx-1]; idx += len_Σx
+        Lw_flat = ψ[idx:idx+len_Σw-1]; idx += len_Σw
+        Lv_flat = ψ[idx:idx+len_Σv-1]; idx += len_Σv
         Lx = reshape(Lx_flat, size(Σx_0))
         Lw = reshape(Lw_flat, size(Σw_0))
         Lv = reshape(Lv_flat, size(Σv_0))
