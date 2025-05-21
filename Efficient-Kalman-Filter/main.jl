@@ -74,7 +74,7 @@ function em_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
       A_c, B_c, D_c, G_c,
       fd_c, td_c, ecb_c, T0_c, TC_c,
       ψ,
-      maxiter=5, tol=1e5, verbose=true,
+      maxiter=5, tol=1e3, verbose=true,
       θg_bool=false
     )
   return (Σw_new, Σv_new, a0_new, Σx_new, θF_new, θg_new)
@@ -103,7 +103,7 @@ function nm_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
         A_c, B_c, D_c, G_c,
         fd_c, td_c, ecb_c, T0_c, TC_c,
         a0, Σx, Σw, Σv, θF, θg;
-        tol=1e5, maxiter=20, verbose=true,
+        tol=1e3, maxiter=20, verbose=true,
         Newton_bool=false, θg_bool=false
       )
     return (Σw_new, Σv_new, a0_new, Σx_new, θF_new, θg_new)

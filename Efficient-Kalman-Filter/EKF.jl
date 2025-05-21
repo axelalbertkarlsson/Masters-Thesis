@@ -448,7 +448,6 @@ function NM(
         ψ_opt = newtonOptimize(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
     else
         #ψ_opt = newtonOptimizeBroyden(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
-        println(size(ψ0))
         ψ_opt = optimize_parameters(fobj, ψ0;
                                 tol=tol,
                                 maxiter=maxiter,
