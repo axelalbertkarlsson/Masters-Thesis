@@ -35,10 +35,10 @@ function compute_ins_mse(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, subtitle)
         ins.firstDates, ins.tradeDates,
         ins.ecbRatechangeDates, ins.T0All, ins.TAll
       )
-      fAll, zPredAll, innov = outputData.calculateRateAndRepricing(
+      fAll, zPredAll, innov, _ = outputData.calculateRateAndRepricing(
       EAll, ins.zAll, ins.I_z_t, x_s, oAll,
       ins.oIndAll, ins.tcAll, θg,
-      Int.(ins.n_z_t), ins.n_t, ins.n_s, ins.n_u
+      Int.(ins.n_z_t), ins.n_t, ins.n_s, ins.n_u, ins.G_t, Σv  
     )
     # Plot Forward Rate Curve (Should be done in Matlab instead)
     if subtitle != "No Plot"
@@ -74,7 +74,7 @@ function em_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
       A_c, B_c, D_c, G_c,
       fd_c, td_c, ecb_c, T0_c, TC_c,
       ψ,
-      maxiter=5, tol=1e3, verbose=true,
+      maxiter=8, tol=1e3, verbose=true,
       θg_bool=false
     )
   return (Σw_new, Σv_new, a0_new, Σx_new, θF_new, θg_new)
@@ -103,7 +103,7 @@ function nm_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
         A_c, B_c, D_c, G_c,
         fd_c, td_c, ecb_c, T0_c, TC_c,
         a0, Σx, Σw, Σv, θF, θg;
-        tol=1e3, maxiter=20, verbose=true,
+        tol=1e3, maxiter=80, verbose=true,
         Newton_bool=false, θg_bool=false
       )
     return (Σw_new, Σv_new, a0_new, Σx_new, θF_new, θg_new)
@@ -158,27 +158,59 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
         ci, length(ranges), first(idxr), excel_date_to_datestring(ins.times[first(idxr)]), last(idxr), excel_date_to_datestring(ins.times[last(idxr)])) 
         # candidate ψ
         Σw, Σv, a0, Σx, θF, θg = ψ_cand_NM
-        zPredAll_NM, innovationAll_NM, innovation_likelihood_NM = EKF.calcOutOfSample(
-          ins.zAll[idxr], ins.oIndAll[idxr], ins.tcAll[idxr], ins.I_z_t[idxr],
-          ins.n_c, ins.n_s, length(idxr),
-          ins.n_x, Int.(ins.n_z_t[idxr]),
+
+        x_f, P_f, x_s, P_s, P_l, oAll, EAll =
+        EKF.kalman_filter_smoother_lag1(
+          ins.zAll[idxr], ins.oIndAll[idxr], ins.tcAll[idxr], ins.I_z_t[idxr], ins.f_t,
+          ins.n_c, ins.n_p, ins.n_s, length(idxr),
+          ins.n_u, ins.n_x, Int.(ins.n_z_t[idxr]),
           ins.A_t[idxr], ins.B_t[idxr], ins.D_t[idxr], ins.G_t[idxr],
           Σw, Σv, a0, Σx, θF, θg,
           ins.firstDates[idxr], ins.tradeDates[idxr],
           ins.ecbRatechangeDates, ins.T0All[idxr], ins.TAll[idxr]
         )
+        fAll_NM, zPredAll_NM, innovationAll_NM, innovation_likelihood_NM = outputData.calculateRateAndRepricing(
+        EAll, ins.zAll[idxr], ins.I_z_t[idxr], x_s, oAll,
+        ins.oIndAll[idxr], ins.tcAll[idxr], θg,
+        Int.(ins.n_z_t[idxr]), length(idxr), ins.n_s, ins.n_u, ins.G_t[idxr], Σv 
+      )
+        # zPredAll_NM, innovationAll_NM, innovation_likelihood_NM = EKF.calcOutOfSample(
+        #   ins.zAll[idxr], ins.oIndAll[idxr], ins.tcAll[idxr], ins.I_z_t[idxr],
+        #   ins.n_c, ins.n_s, length(idxr),
+        #   ins.n_x, Int.(ins.n_z_t[idxr]),
+        #   ins.A_t[idxr], ins.B_t[idxr], ins.D_t[idxr], ins.G_t[idxr],
+        #   Σw, Σv, a0, Σx, θF, θg,
+        #   ins.firstDates[idxr], ins.tradeDates[idxr],
+        #   ins.ecbRatechangeDates, ins.T0All[idxr], ins.TAll[idxr]
+        # )
 
 
         Σw, Σv, a0, Σx, θF, θg = ψ_cand_EM
-        zPredAll_EM, innovationAll_EM, innovation_likelihood_EM = EKF.calcOutOfSample(
-          ins.zAll[idxr], ins.oIndAll[idxr], ins.tcAll[idxr], ins.I_z_t[idxr],
-          ins.n_c, ins.n_s, length(idxr),
-          ins.n_x, Int.(ins.n_z_t[idxr]),
+
+        x_f, P_f, x_s, P_s, P_l, oAll, EAll =
+        EKF.kalman_filter_smoother_lag1(
+          ins.zAll[idxr], ins.oIndAll[idxr], ins.tcAll[idxr], ins.I_z_t[idxr], ins.f_t,
+          ins.n_c, ins.n_p, ins.n_s, length(idxr),
+          ins.n_u, ins.n_x, Int.(ins.n_z_t[idxr]),
           ins.A_t[idxr], ins.B_t[idxr], ins.D_t[idxr], ins.G_t[idxr],
           Σw, Σv, a0, Σx, θF, θg,
           ins.firstDates[idxr], ins.tradeDates[idxr],
           ins.ecbRatechangeDates, ins.T0All[idxr], ins.TAll[idxr]
         )
+        fAll_EM, zPredAll_EM, innovationAll_EM, innovation_likelihood_EM = outputData.calculateRateAndRepricing(
+        EAll, ins.zAll[idxr], ins.I_z_t[idxr], x_s, oAll,
+        ins.oIndAll[idxr], ins.tcAll[idxr], θg,
+        Int.(ins.n_z_t[idxr]), length(idxr), ins.n_s, ins.n_u, ins.G_t[idxr], Σv 
+      )
+        # zPredAll_EM, innovationAll_EM, innovation_likelihood_EM = EKF.calcOutOfSample(
+        #   ins.zAll[idxr], ins.oIndAll[idxr], ins.tcAll[idxr], ins.I_z_t[idxr],
+        #   ins.n_c, ins.n_s, length(idxr),
+        #   ins.n_x, Int.(ins.n_z_t[idxr]),
+        #   ins.A_t[idxr], ins.B_t[idxr], ins.D_t[idxr], ins.G_t[idxr],
+        #   Σw, Σv, a0, Σx, θF, θg,
+        #   ins.firstDates[idxr], ins.tradeDates[idxr],
+        #   ins.ecbRatechangeDates, ins.T0All[idxr], ins.TAll[idxr]
+        # )
         
         zPredAll_RKF = ins.zPredAll[idxr]
         innovationAll_RKF = ins.innovationAll[idxr]

@@ -132,7 +132,7 @@ function EM(
         vecψ0 = pack(Σw, Σv, θF, θg)
         
         #vecψ_opt = optimize_parameters(q2obj_struct, vecψ0; tol=1e-8, maxiter)
-        vecψ_opt = optimize_parameters_forwarddiff(q2obj_struct, vecψ0; tol=1e-8, maxiter=4)
+        vecψ_opt = optimize_parameters_forwarddiff(q2obj_struct, vecψ0; tol=1e-8, maxiter=10)
 
         Σw, Σv, θF, θg = unpack_vecψ(vecψ_opt)
 
