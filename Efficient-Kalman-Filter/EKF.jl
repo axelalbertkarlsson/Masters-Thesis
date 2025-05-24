@@ -102,6 +102,10 @@ function EM(
     pack, unpack_vecψ = make_packers(n_x, n_u, θF, θg, θg_bool)
     prev_Q = -Inf
 
+    em_times = Float64[]
+    em_allocs = Float64[]
+    em_iters = 0
+
     for k in 1:maxiter
         x_f, P_f, x_s, P_s, P_lag, oAll, EAll = kalman_filter_smoother_lag1(
             zAll, oIndAll, tcAll, I_z_t, f_t,
@@ -132,7 +136,12 @@ function EM(
         vecψ0 = pack(Σw, Σv, θF, θg)
         
         #vecψ_opt = optimize_parameters(q2obj_struct, vecψ0; tol=1e-8, maxiter)
-        vecψ_opt = optimize_parameters_forwarddiff(q2obj_struct, vecψ0; tol=1e-8, maxiter=10)
+        vecψ_opt, its, alloc, cnt = optimize_parameters_forwarddiff(q2obj_struct, vecψ0; tol=1e-8, maxiter=10)
+
+        # accumulate
+        append!(em_times, its)
+        em_allocs .= vcat(em_allocs, alloc)
+        em_iters += cnt
 
         Σw, Σv, θF, θg = unpack_vecψ(vecψ_opt)
 
@@ -159,7 +168,7 @@ function EM(
         AAll, BAll, DAll, GAll,
         Σw, Σv, a0, Σx, θF, θg,
         firstDates, tradeDates, ecbRatechangeDates, T0All, TAll
-    )..., a0, Σx, Σw, Σv, θF, θg
+    )..., a0, Σx, Σw, Σv, θF, θg, em_times, em_allocs, em_iters
 end
 
 
@@ -447,16 +456,11 @@ function NM(
     if (Newton_bool)
         ψ_opt = newtonOptimize(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
     else
-        #ψ_opt = newtonOptimizeBroyden(fobj, ψ0; tol=tol, maxiter=maxiter, verbose=verbose)
-        ψ_opt = optimize_parameters(fobj, ψ0;
+        ψ_opt, its, alloc, cnt = optimize_parameters(fobj, ψ0;
                                 tol=tol,
                                 maxiter=maxiter,
                                 verbose=verbose
                             )
-        # ψ_opt = optimize_bfgs(fobj, ψ0;
-        #         tol=tol,
-        #         maxiter=maxiter,
-        #         verbose=verbose)
     end
     # unpack
     a0_opt, Σx_opt, Σw_opt, Σv_opt, θF_opt, θg_opt = psi_to_parameters(ψ_opt, θg_bool)
@@ -472,7 +476,7 @@ function NM(
         )
 
     return x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll,
-           a0_opt, Σx_opt, Σw_opt, Σv_opt, θF_opt, θg_opt
+           a0_opt, Σx_opt, Σw_opt, Σv_opt, θF_opt, θg_opt, its, alloc, cnt
 end
 
 end # module
