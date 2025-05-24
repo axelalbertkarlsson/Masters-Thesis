@@ -89,27 +89,36 @@ function optimize_parameters(
     maxiter::Int      = 10,
     verbose::Bool     = true
 )
-    # compile tape + gradient mutator
     tape = setup_tape!(f, x0)
     grad! = (g,x)->(ReverseDiff.gradient!(g,tape,x); g)
 
-    # build a BFGS instance with a modest initial step and backtracking
     inner_method = BFGS(
       alphaguess = InitialStatic(alpha=1e-2),
       linesearch = BackTracking()
     )
 
-    # inner‐solver options
+    t0 = time_ns()
+    iters_ns = Int64[]
+
     opts = Optim.Options(
-      g_tol      = tol,
-      iterations = maxiter,
-      store_trace= verbose,
-      show_trace = verbose
+      g_tol       = tol,
+      iterations  = maxiter,
+      store_trace = false,
+      show_trace  = verbose,
+      callback    = state -> (push!(iters_ns, time_ns()); false)
     )
 
     @info "Starting unconstrained BFGS…"
-    res = optimize(f, grad!, x0, inner_method, opts)
-    return Optim.minimizer(res)
+    bench = @timed res = optimize(f, grad!, x0, inner_method, opts)
+
+    stamps     = [t0; iters_ns]
+    iter_times = diff(stamps) ./ 1e9
+
+    x_star      = Optim.minimizer(res)
+    alloc_total = bench.bytes      # ← use `bytes`, not `alloc` or `memory`
+    iter_count  = length(iter_times)
+
+    return x_star, iter_times, alloc_total, iter_count
 end
 
 function optimize_bfgs(f, x0; tol=1e-6, maxiter=10, verbose=false)
@@ -133,37 +142,44 @@ function optimize_parameters_forwarddiff(
   maxiter::Int      = 10,
   verbose::Bool     = true
 )
-
   @info "Building Forward gradient tape…"
-  # Define gradient function using ForwardDiff
   grad_f = x -> ForwardDiff.gradient(f, x)
-
   @info "Copying gradient tape…"
-  grad! = (g, x) -> copyto!(g, grad_f(x))
+  grad! = (g,x) -> copyto!(g, grad_f(x))
 
-  # Setup optimizer (BFGS with line search)
   inner_method = BFGS(
-      alphaguess = InitialStatic(alpha=1e-2),
-      linesearch = BackTracking()
+    alphaguess = InitialStatic(alpha=1e-2),
+    linesearch = BackTracking()
   )
 
+  t0 = time_ns()
+  iters_ns = Int64[]
+
   opts = Optim.Options(
-      g_tol = tol,
-      iterations = maxiter,
-      store_trace = verbose,
-      show_trace = verbose
+    g_tol       = tol,
+    iterations  = maxiter,
+    store_trace = false,
+    show_trace  = verbose,
+    callback    = state -> (push!(iters_ns, time_ns()); false)
   )
 
   @info "Starting ForwardDiff BFGS optimization…"
-  res = optimize(f, grad!, x0, inner_method, opts)
+  bench = @timed res = optimize(f, grad!, x0, inner_method, opts)
+
+  stamps     = [t0; iters_ns]
+  iter_times = diff(stamps) ./ 1e9
 
   if Optim.converged(res)
-      @info "ForwardDiff BFGS converged in $(res.iterations) steps"
+    @info "ForwardDiff BFGS converged in $(res.iterations) steps"
   else
-      @warn "ForwardDiff BFGS did NOT converge" status=res
+    @warn "ForwardDiff BFGS did NOT converge" status=res
   end
 
-  return Optim.minimizer(res)
+  x_star      = Optim.minimizer(res)
+  alloc_total = bench.bytes      # ← use `bytes` here as well
+  iter_count  = length(iter_times)
+
+  return x_star, iter_times, alloc_total, iter_count
 end
 
 end # module
