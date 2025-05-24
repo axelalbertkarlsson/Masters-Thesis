@@ -1,4 +1,4 @@
-using Revise, LinearAlgebra, Plots, DataFrames, CSV, Statistics, Printf, Dates
+using Revise, LinearAlgebra, Plots, DataFrames, CSV, Statistics, Printf, Dates, MAT
 
 # Clears terminal
 echo_clear() = print("\e[2J\e[H")
@@ -38,7 +38,7 @@ function compute_ins_mse(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, subtitle)
       fAll, zPredAll, innov, _ = outputData.calculateRateAndRepricing(
       EAll, ins.zAll, ins.I_z_t, x_s, oAll,
       ins.oIndAll, ins.tcAll, θg,
-      Int.(ins.n_z_t), ins.n_t, ins.n_s, ins.n_u, ins.G_t, Σv  
+      Int.(ins.n_z_t), ins.n_t, ins.n_s, ins.n_u, ins.G_t, Σv, P_f  
     )
     # Plot Forward Rate Curve (Should be done in Matlab instead)
     if subtitle != "No Plot"
@@ -50,6 +50,32 @@ function compute_ins_mse(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, subtitle)
 
     mse, mae = calculateMSE(innov)
     return mse, mae, zPredAll
+end
+
+
+# — Compute in-sample MSE for given ψ tuple with limited data set for plot
+function plot_idxr(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, subtitle,  idxr)
+    Σw, Σv, a0, Σx, θF, θg = ψ
+    x_f, P_f, x_s, P_s, P_l, oAll, EAll =
+      EKF.kalman_filter_smoother_lag1(
+        ins.zAll[idxr], ins.oIndAll[idxr], ins.tcAll[idxr], ins.I_z_t[idxr], ins.f_t,
+        ins.n_c, ins.n_p, ins.n_s, length(idxr),
+        ins.n_u, ins.n_x, Int.(ins.n_z_t[idxr]),
+        ins.A_t[idxr], ins.B_t[idxr], ins.D_t[idxr], ins.G_t[idxr],
+        Σw, Σv, a0, Σx, θF, θg,
+        ins.firstDates[idxr], ins.tradeDates[idxr],
+        ins.ecbRatechangeDates, ins.T0All[idxr], ins.TAll[idxr]
+      )
+      fAll, zPredAll, innov, _ = outputData.calculateRateAndRepricing(
+      EAll, ins.zAll[idxr], ins.I_z_t[idxr], x_s, oAll,
+      ins.oIndAll[idxr], ins.tcAll[idxr], θg,
+      Int.(ins.n_z_t[idxr]), length(idxr), ins.n_s, ins.n_u, ins.G_t[idxr], Σv, P_f  
+    )
+    # Plot Forward Rate Curve (Should be done in Matlab instead)    
+    plt = plots.plot3DCurve(ins.times[idxr], fAll, subtitle)
+    display(plt)
+    print(subtitle)
+    println(" - Plot Done")
 end
 
 # — Run NM on a single chunk, return new ψ tuple
@@ -66,7 +92,7 @@ function em_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
   T0_c, TC_c        = ins.T0All[idxr], ins.TAll[idxr]
   Tchunk            = length(idxr)
 
-  x_f, P_f, x_s, P_s, P_l, oAll, EAll, a0_new, Σx_new, Σw_new, Σv_new, θF_new, θg_new =
+  x_f, P_f, x_s, P_s, P_l, oAll, EAll, a0_new, Σx_new, Σw_new, Σv_new, θF_new, θg_new, em_times, em_alloc, em_iters =
     EKF.EM(
       z_c, oInd_c, tc_c, Iz_c, f_c,
       ins.n_c, ins.n_p, ins.n_s, Tchunk,
@@ -74,10 +100,10 @@ function em_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
       A_c, B_c, D_c, G_c,
       fd_c, td_c, ecb_c, T0_c, TC_c,
       ψ,
-      maxiter=8, tol=1e3, verbose=true,
+      maxiter=4, tol=1e3, verbose=true,
       θg_bool=false
     )
-  return (Σw_new, Σv_new, a0_new, Σx_new, θF_new, θg_new)
+  return (Σw_new, Σv_new, a0_new, Σx_new, θF_new, θg_new), em_times, em_alloc, em_iters
 end
 
 # — Run NM on a single chunk, return new ψ tuple
@@ -95,7 +121,7 @@ function nm_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
     Tchunk            = length(idxr)
 
     x_f, P_f, x_s, P_s, P_l, oAll, EAll,
-    a0_new, Σx_new, Σw_new, Σv_new, θF_new, θg_new =
+    a0_new, Σx_new, Σw_new, Σv_new, θF_new, θg_new, nm_times, nm_alloc, nm_iters =
       EKF.NM(
         z_c, oInd_c, tc_c, Iz_c, f_c,
         ins.n_c, ins.n_p, ins.n_s, Tchunk,
@@ -103,14 +129,20 @@ function nm_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
         A_c, B_c, D_c, G_c,
         fd_c, td_c, ecb_c, T0_c, TC_c,
         a0, Σx, Σw, Σv, θF, θg;
-        tol=1e3, maxiter=80, verbose=true,
+        tol=1e3, maxiter=40, verbose=true,
         Newton_bool=false, θg_bool=false
       )
-    return (Σw_new, Σv_new, a0_new, Σx_new, θF_new, θg_new)
+    return (Σw_new, Σv_new, a0_new, Σx_new, θF_new, θg_new), nm_times, nm_alloc, nm_iters
 end
 
 # — Rolling-window NM: update ψ only if it improves full in-sample MSE
 function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, ψ0::NTuple{6,Any})
+    nm_times = Float64[]
+    nm_alloc = Float64[]
+    nm_iters = 0
+    em_times = Float64[]
+    em_alloc = Float64[]
+    em_iters = 0
     ψ = ψ0
     baseline_mse, baseline_mae,_ = compute_ins_mse(ψ, ins, "Regular")
     @printf("Baseline in-sample → MSE = %.5e, MAE = %.5e\n",
@@ -118,7 +150,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
     # chunk size = 1% of total time steps
     total_t = ins.n_t + outs.n_t
-    chunk_sz = max(1, floor(Int, 0.0513 * total_t)) #3% works on CJ's Mac with theta_g (0.0513 exactly one year)
+    chunk_sz = max(1, floor(Int, 0.001 * total_t)) #3% works on CJ's Mac with theta_g (0.0513 exactly one year)
     ranges = [s:min(s+chunk_sz-1, ins.n_t) for s in 1:chunk_sz:ins.n_t]
 
     ψ_cand_NM = ψ
@@ -129,10 +161,13 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
         @printf("\n--- Chunk (Ins) %d/%d: Days %d (%s) – %d (%s) ---\n",
                 ci, length(ranges), first(idxr), excel_date_to_datestring(ins.times[first(idxr)]), last(idxr), excel_date_to_datestring(ins.times[last(idxr)])) 
         # candidate ψ
-        ψ_cand_NM = nm_on_chunk(ψ, ins, idxr)
-        ψ_cand_EM = em_on_chunk(ψ, ins, idxr)
-        mse_cand_NM, mae_cand_NM, _ = compute_ins_mse(ψ_cand_NM, ins, "Newton Nr: $ci")
-        mse_cand_EM, mae_cand_EM, _ = compute_ins_mse(ψ_cand_EM, ins, "EM Nr: $ci")
+        ψ_cand_NM, nm_times, nm_alloc, nm_iters = nm_on_chunk(ψ, ins, idxr)
+        ψ_cand_EM, em_times, em_alloc, em_iters = em_on_chunk(ψ, ins, idxr)
+        mse_cand_NM, mae_cand_NM, _ = compute_ins_mse(ψ_cand_NM, ins, "No Plot")
+        mse_cand_EM, mae_cand_EM, _ = compute_ins_mse(ψ_cand_EM, ins, "No Plot")
+        plot_idxr(ψ0, ins, "Regular Nr: $ci",  idxr)
+        plot_idxr(ψ_cand_NM, ins, "NM Nr: $ci",  idxr)
+        plot_idxr(ψ_cand_EM, ins, "EM Nr: $ci",  idxr)
         if mse_cand_NM < mse_cand_EM
           mse_cand = mse_cand_NM
           mae_cand = mae_cand_NM
@@ -153,6 +188,8 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
         else
             println("⇒ Rejected; retained previous ψ.")
         end
+      
+        plots.plot_benchmarks(nm_times, nm_alloc, em_times, em_alloc)
       else 
         @printf("\n--- Chunk (Outs) %d/%d: Days %d (%s) – %d (%s) ---\n",
         ci, length(ranges), first(idxr), excel_date_to_datestring(ins.times[first(idxr)]), last(idxr), excel_date_to_datestring(ins.times[last(idxr)])) 
@@ -172,7 +209,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
         fAll_NM, zPredAll_NM, innovationAll_NM, innovation_likelihood_NM = outputData.calculateRateAndRepricing(
         EAll, ins.zAll[idxr], ins.I_z_t[idxr], x_s, oAll,
         ins.oIndAll[idxr], ins.tcAll[idxr], θg,
-        Int.(ins.n_z_t[idxr]), length(idxr), ins.n_s, ins.n_u, ins.G_t[idxr], Σv 
+        Int.(ins.n_z_t[idxr]), length(idxr), ins.n_s, ins.n_u, ins.G_t[idxr], Σv, P_f 
       )
         # zPredAll_NM, innovationAll_NM, innovation_likelihood_NM = EKF.calcOutOfSample(
         #   ins.zAll[idxr], ins.oIndAll[idxr], ins.tcAll[idxr], ins.I_z_t[idxr],
@@ -200,7 +237,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
         fAll_EM, zPredAll_EM, innovationAll_EM, innovation_likelihood_EM = outputData.calculateRateAndRepricing(
         EAll, ins.zAll[idxr], ins.I_z_t[idxr], x_s, oAll,
         ins.oIndAll[idxr], ins.tcAll[idxr], θg,
-        Int.(ins.n_z_t[idxr]), length(idxr), ins.n_s, ins.n_u, ins.G_t[idxr], Σv 
+        Int.(ins.n_z_t[idxr]), length(idxr), ins.n_s, ins.n_u, ins.G_t[idxr], Σv, P_f
       )
         # zPredAll_EM, innovationAll_EM, innovation_likelihood_EM = EKF.calcOutOfSample(
         #   ins.zAll[idxr], ins.oIndAll[idxr], ins.tcAll[idxr], ins.I_z_t[idxr],
@@ -219,12 +256,31 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
         outputData.write_results(
           filename,
-          zPredAll_NM,   innovationAll_NM,   innovation_likelihood_NM,
-          zPredAll_EM,   innovationAll_EM,   innovation_likelihood_EM,
-          zPredAll_RKF,  innovationAll_RKF
+          fAll_NM,  zPredAll_NM,   innovationAll_NM,   innovation_likelihood_NM,  nm_times,   nm_alloc,   nm_iters,
+          fAll_EM,  zPredAll_EM,   innovationAll_EM,   innovation_likelihood_EM,  em_times,   em_alloc,   em_iters,
+          zPredAll_RKF,  innovationAll_RKF,
+          ins.times[idxr]
         )
         println("⇒ Wrote to "*filename*"...")        
     end
+    Σw_f, Σv_f, a0_f, Σx_f, θF_f, θg_f = ψ
+    matwrite("psi_final.mat", Dict(
+
+      "Sigma_w"  => Σw_f,
+
+      "Sigma_v"  => Σv_f,
+
+      "a0"       => a0_f,
+
+      "Sigma_x"  => Σx_f,
+
+      "theta_F"  => θF_f,
+
+      "theta_g"  => θg_f,
+
+    ))
+
+    println("Saved ψ_final → psi_final.mat")
   end
     return ψ
 end
