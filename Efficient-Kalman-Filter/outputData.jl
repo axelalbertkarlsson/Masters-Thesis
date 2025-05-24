@@ -10,7 +10,7 @@ import Statistics
 
 export calculateMSE, calculateRateAndRepricing, write_results
 
-function calculateRateAndRepricing(EAll, zAll, I_z_t, xAll, oAll, oIndAll, tcAll, θg, n_z_t,n_t, n_s, n_u,  GAll, Σv)
+function calculateRateAndRepricing(EAll, zAll, I_z_t, xAll, oAll, oIndAll, tcAll, θg, n_z_t,n_t, n_s, n_u,  GAll, Σv, P_predAll)
     # Initialization
     T=n_t;
     E = EAll[1]
@@ -48,7 +48,7 @@ function calculateRateAndRepricing(EAll, zAll, I_z_t, xAll, oAll, oIndAll, tcAll
         innovationLik -= 0.5 * (
             n_z_t[t]*log(2π) +        # dimension term
             logdet(S) +               # log-determinant
-            ε' * (S \ ε)              # Mahalanobis term
+            innovationAll[t]' * (S \ innovationAll[t])              # Mahalanobis term
         )
 
     end
@@ -68,21 +68,15 @@ function calculateMSE(innovationAll)
     # 2b) compute MAE
     mae_reg = Statistics.mean(abs.(all_reg))
 
-    # 3) pretty-print with Printf
-    println("--------------------------------------------------")
-    @printf("MSE  (EKF):           % .5e\n", mse_reg)
-    println()
-    @printf("MAE  (EKF):           % .5e\n", mae_reg)
-    println("--------------------------------------------------")
-
     return mse_reg, mae_reg    
 end
 
 function write_results(
     filename::AbstractString,
-    zPredNMAll, innovationAll_NM, innovation_likelihood_NM,
-    zPredEMAll, innovationAll_EM, innovation_likelihood_EM,
-    zPredRKFAll, innovationAll_RKF
+    fAll_NM, zPredNMAll, innovationAll_NM, innovation_likelihood_NM, times_NM, alloc_NM, iters_NM,
+    fAll_EM, zPredEMAll, innovationAll_EM, innovation_likelihood_EM, times_EM, alloc_EM, iters_EM,
+    zPredRKFAll, innovationAll_RKF,
+    times
 )
     # helper: wrap every element (scalar or vector) into a column vector
     function cellify(x)
@@ -95,16 +89,27 @@ function write_results(
     end
 
     matopen(filename, "w") do f
+        write(f, "fAll_NM", fAll_NM)
+        write(f, "fAll_EM", fAll_EM)
+
         write(f, "zPredNMAll",               cellify(zPredNMAll))
         write(f, "innovationAll_NM",         cellify(innovationAll_NM))
         write(f, "innovation_likelihood_NM", cellify(innovation_likelihood_NM))
+        write(f, "times_NM", times_NM)
+        write(f, "alloc_NM", alloc_NM)
+        write(f, "iters_NM", iters_NM)
 
         write(f, "zPredEMAll",               cellify(zPredEMAll))
         write(f, "innovationAll_EM",         cellify(innovationAll_EM))
         write(f, "innovation_likelihood_EM", cellify(innovation_likelihood_EM))
+        write(f, "times_EM", times_EM)
+        write(f, "alloc_EM", alloc_EM)
+        write(f, "iters_EM", iters_EM)
 
         write(f, "zPredRKFAll",              cellify(zPredRKFAll))
         write(f, "innovationAll_RKF",        cellify(innovationAll_RKF))
+
+        write(f, "times",                    cellify(times))
     end
 end
 
