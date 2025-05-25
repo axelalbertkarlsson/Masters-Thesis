@@ -150,7 +150,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
     # chunk size = 1% of total time steps
     total_t = ins.n_t + outs.n_t
-    chunk_sz = max(1, floor(Int, 0.001 * total_t)) #3% works on CJ's Mac with theta_g (0.0513 exactly one year)
+    chunk_sz = max(1, floor(Int, 0.0513 * total_t)) #3% works on CJ's Mac with theta_g (0.0513 exactly one year)
     ranges = [s:min(s+chunk_sz-1, ins.n_t) for s in 1:chunk_sz:ins.n_t]
 
     ψ_cand_NM = ψ
@@ -189,7 +189,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
             println("⇒ Rejected; retained previous ψ.")
         end
       
-        plots.plot_benchmarks(nm_times, nm_alloc, em_times, em_alloc)
+        #plots.plot_benchmarks(nm_times, nm_alloc, em_times, em_alloc)
       else 
         @printf("\n--- Chunk (Outs) %d/%d: Days %d (%s) – %d (%s) ---\n",
         ci, length(ranges), first(idxr), excel_date_to_datestring(ins.times[first(idxr)]), last(idxr), excel_date_to_datestring(ins.times[last(idxr)])) 
