@@ -27,7 +27,7 @@ export plot_with_params
 function plot_with_params(data_insample, ψ_tuple)
     Σw, Σv, a0, Σx, θF, θg = ψ_tuple
 
-    x_pred, P_pred, x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll = EKF.kalman_filter_smoother_lag1(
+    x_pred, P_pred, x_filt, P_filt, x_smooth, P_smooth, P_lag, oAll, EAll, z_pred, z_filt = EKF.kalman_filter_smoother_lag1(
         data_insample.zAll,
         data_insample.oIndAll,
         data_insample.tcAll,
@@ -76,8 +76,10 @@ function plot_with_params(data_insample, ψ_tuple)
     plt1 = plots.plot3DCurve(data_insample.times, fAll, "ψ_final Parameters")
     display(plt1)
     println("Plot Done")
-
-    # plots.plot_kalman_results(z_pred, z_filt, z_smooth, data_insample.zAll)
+    
+    z_smooth = z_filt
+    plots.plot_kalman_results(z_pred, z_filt, z_smooth, data_insample.zAll)
     plots.plot_innovations(innovationAll)
 end
+
 end # module
