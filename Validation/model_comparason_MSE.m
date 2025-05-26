@@ -53,7 +53,7 @@ function [bar_d_matrix_1, bar_d_matrix_2,bar_d_matrix, z_matrix, p_matrix, alpha
             % Compute z
             z = bar_d / (s / sqrt(T));
 
-            p_value = 2 * (1 - normcdf(abs(z)));
+            p_value =  2*(1 - normcdf(abs(z)));
 
 
             % Compute alpha_ij = normcdf(-z)
