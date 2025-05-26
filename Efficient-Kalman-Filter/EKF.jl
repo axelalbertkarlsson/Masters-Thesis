@@ -140,7 +140,7 @@ function EM(
 
         # accumulate
         append!(em_times, its)
-        em_allocs .= vcat(em_allocs, alloc)
+        em_allocs = vcat(em_allocs, alloc)
         em_iters += cnt
 
         Σw, Σv, θF, θg = unpack_vecψ(vecψ_opt)

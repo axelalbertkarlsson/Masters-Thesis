@@ -3,6 +3,7 @@ module newtonMethod
 using ReverseDiff, LinearAlgebra
 using Optim, LineSearches
 using ForwardDiff, ProgressMeter
+using Base: gc_bytes
 
 export newtonStep, newtonOptimize, newtonOptimizeBroyden, optimize_parameters, optimize_bfgs, optimize_parameters_forwarddiff
 
@@ -97,15 +98,27 @@ function optimize_parameters(
       linesearch = BackTracking()
     )
 
-    t0 = time_ns()
-    iters_ns = Int64[]
+    # timestamp and allocation trackers
+    t0        = time_ns()
+    iters_ns  = Int64[]
+    allocs_ns = Int64[]
+    # use a Ref to hold the last GC counter
+    prev_alloc = Ref(gc_bytes())
 
     opts = Optim.Options(
       g_tol       = tol,
       iterations  = maxiter,
       store_trace = false,
       show_trace  = verbose,
-      callback    = state -> (push!(iters_ns, time_ns()); false)
+      callback    = state -> begin
+         # record time
+         push!(iters_ns, time_ns())
+         # record bytes allocated since last iteration
+         cur = gc_bytes()
+         push!(allocs_ns, cur - prev_alloc[])
+         prev_alloc[] = cur
+         false
+      end
     )
 
     @info "Starting unconstrained BFGS…"
@@ -118,7 +131,7 @@ function optimize_parameters(
     alloc_total = bench.bytes      # ← use `bytes`, not `alloc` or `memory`
     iter_count  = length(iter_times)
 
-    return x_star, iter_times, alloc_total, iter_count
+    return x_star, iter_times, allocs_ns, iter_count
 end
 
 function optimize_bfgs(f, x0; tol=1e-6, maxiter=10, verbose=false)
@@ -152,15 +165,24 @@ function optimize_parameters_forwarddiff(
     linesearch = BackTracking()
   )
 
-  t0 = time_ns()
-  iters_ns = Int64[]
+  # timestamp and allocation trackers
+  t0         = time_ns()
+  iters_ns   = Int64[]
+  allocs_ns  = Int64[]
+  prev_alloc = Ref(gc_bytes())
 
   opts = Optim.Options(
     g_tol       = tol,
     iterations  = maxiter,
     store_trace = false,
     show_trace  = verbose,
-    callback    = state -> (push!(iters_ns, time_ns()); false)
+    callback    = state -> begin
+       push!(iters_ns, time_ns())
+       cur = gc_bytes()
+       push!(allocs_ns, cur - prev_alloc[])
+       prev_alloc[] = cur
+       false
+    end
   )
 
   @info "Starting ForwardDiff BFGS optimization…"
@@ -179,7 +201,7 @@ function optimize_parameters_forwarddiff(
   alloc_total = bench.bytes      # ← use `bytes` here as well
   iter_count  = length(iter_times)
 
-  return x_star, iter_times, alloc_total, iter_count
+  return x_star, iter_times, allocs_ns, iter_count
 end
 
 end # module
