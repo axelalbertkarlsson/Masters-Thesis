@@ -1,7 +1,14 @@
+% stattest.m
 clear;
-
 datapath = "../";
 addpath(datapath);
+
+% ——— PREALLOCATE combined containers ———
+combined_innov.RKF = [];
+combined_innov.NM  = [];
+combined_innov.EM  = [];
+combined_lik.NM    = [];
+combined_lik.EM    = [];
 
 % List of .mat filenames
 mat_files = {
@@ -17,125 +24,130 @@ mat_files = {
     '2024-10-17_OOS_2025-04-09.mat'
 };
 
-%% MSE
+num_files = numel(mat_files);
+cols      = ceil(sqrt(num_files));
+rows      = ceil(num_files/cols);
 
+%% ======================= MSE per‐file =======================
 significance_level = 0.05;
-contract_index = 14;
-MSE_model_list = ["RKF", "NM", "EM"];
-MSE_num_models = length(MSE_model_list);
+contract_index     = 14;
+MSE_models         = ["RKF","NM","EM"];
+MSE_n             = numel(MSE_models);
 
-% Figure setup
-num_files = length(mat_files);
-cols = ceil(sqrt(num_files));
-rows = ceil(num_files / cols);
-figure(1);
-clf;
-
-meas_improvements = cell(length(num_files));
-
+figure(1); clf;
 for idx = 1:num_files
-    % Load file
-    file_to_load = fullfile(datapath, mat_files{idx});
-    load(file_to_load);
-
-    % Assign innovations
-    innovations = struct();
-    innovations.RKF = innovationAll_RKF;
-    innovations.NM = innovationAll_NM;
-    innovations.EM = innovationAll_EM;
-
-    % Compute comparison matrices
-    [bar_d_matrix_1, bar_d_matrix_2, ~, ~, ~, MSE_alpha_matrix, MSE_significance_matrix] = model_comparason_MSE(MSE_model_list, innovations, significance_level, contract_index);
-
-
-    % Code for Measurable Improvement
-
-    meas_improvements{idx} = MSE_measurable_improvement(MSE_model_list, bar_d_matrix_1, bar_d_matrix_2, MSE_alpha_matrix);
-
-    % Plot in subplot
+    S = load(fullfile(datapath, mat_files{idx}));
+    % convert times
+    times = cellfun(@double, S.times);
+    % pack innovations
+    innovations.RKF = S.innovationAll_RKF;
+    innovations.NM  = S.innovationAll_NM;
+    innovations.EM  = S.innovationAll_EM;
+    % append to combined
+    combined_innov.RKF = [combined_innov.RKF; innovations.RKF(:)];
+    combined_innov.NM  = [combined_innov.NM;  innovations.NM(:)];
+    combined_innov.EM  = [combined_innov.EM;  innovations.EM(:)];
+    % compute α‐matrix
+    [~,~,~,~,~, alpha_MSE, sig_MSE] = ...
+      model_comparason_MSE(MSE_models, innovations, significance_level, contract_index);
+    % subplot
     subplot(rows, cols, idx);
-    imagesc(MSE_alpha_matrix);
-    colormap('Winter');
-    colorbar;
-    
-    % Set axis
-    xticks(1:MSE_num_models);
-    yticks(1:MSE_num_models);
-    xticklabels(MSE_model_list);
-    yticklabels(MSE_model_list);
-    title(strrep(mat_files{idx}, '_', '\_'));
-
-    % Annotate cells
-    for i = 1:MSE_num_models
-        for j = 1:MSE_num_models
-            text(j, i, sprintf('%.2f', MSE_alpha_matrix(i, j)), ...
-                'HorizontalAlignment', 'center', ...
-                'VerticalAlignment', 'middle', ...
-                'Color', 'white', 'FontSize', 10);
-            if MSE_significance_matrix(i, j) == 0
-                rectangle('Position', [j-0.5, i-0.5, 1, 1], ...
-                          'EdgeColor', 'red', ...
-                          'LineWidth', 2);
-            end
+    imagesc(alpha_MSE);
+    colormap('Winter'); colorbar;
+    xticks(1:MSE_n); yticks(1:MSE_n);
+    xticklabels(MSE_models); yticklabels(MSE_models);
+    title(strrep(mat_files{idx}, '_','\_'));
+    % annotate
+    for i=1:MSE_n
+      for j=1:MSE_n
+        text(j,i,sprintf('%.2f',alpha_MSE(i,j)), ...
+             'HorizontalAlignment','center','Color','white');
+        if sig_MSE(i,j)==0
+          rectangle('Position',[j-0.5,i-0.5,1,1], ...
+                    'EdgeColor','red','LineWidth',2);
         end
+      end
     end
 end
+sgtitle(sprintf('MSE Comparison (α=%.2f)', significance_level));
 
-sgtitle(sprintf('MSE Model Comparison Alpha Matrices (Contract = %d, Significance = %.2f)', contract_index, significance_level));
 
-%% Likelihood
+%% ==================== Likelihood per‐file ====================
+lik_models = ["NM","EM"];
+lik_n      = numel(lik_models);
 
-significance_level = 0.05;
-likelihood_model_list = ["NM", "EM"];
-likelihood_num_models = length(likelihood_model_list);
-
-% Figure setup
-num_files = length(mat_files);
-cols = ceil(sqrt(num_files));
-rows = ceil(num_files / cols);
-figure(2);
-clf;
-
+figure(2); clf;
 for idx = 1:num_files
-    % Load file
-    file_to_load = fullfile(datapath, mat_files{idx});
-    load(file_to_load);
-
-    % Assign innovations
-    likelihoods = struct();
-    likelihoods.NM = innovation_likelihood_NM;
-    likelihoods.EM = innovation_likelihood_EM;
-
-    % Compute comparison matrices
-    [~, ~, ~, likelihood_alpha_matrix, likelihood_significance_matrix] = model_comparason_likelihood(likelihood_model_list, likelihoods, significance_level);
-
-    % Plot in subplot
+    S = load(fullfile(datapath, mat_files{idx}));
+    % pack likelihoods
+    likelihoods.NM = S.innovation_likelihood_NM;
+    likelihoods.EM = S.innovation_likelihood_EM;
+    % append to combined
+    combined_lik.NM = [combined_lik.NM; likelihoods.NM(:)];
+    combined_lik.EM = [combined_lik.EM; likelihoods.EM(:)];
+    % compute α‐matrix
+    [~,~,~, alpha_lik, sig_lik] = ...
+      model_comparason_likelihood(lik_models, likelihoods, significance_level);
+    % subplot
     subplot(rows, cols, idx);
-    imagesc(likelihood_alpha_matrix);
-    colormap('Winter');
-    colorbar;
-    
-    % Set axis
-    xticks(1:likelihood_num_models);
-    yticks(1:likelihood_num_models);
-    xticklabels(likelihood_model_list);
-    yticklabels(likelihood_model_list);
-    title(strrep(mat_files{idx}, '_', '\_'));
-
-    % Annotate cells
-    for i = 1:likelihood_num_models
-        for j = 1:likelihood_num_models
-            text(j, i, sprintf('%.2f', likelihood_alpha_matrix(i, j)), ...
-                'HorizontalAlignment', 'center', ...
-                'VerticalAlignment', 'middle', ...
-                'Color', 'white', 'FontSize', 10);
-            if likelihood_significance_matrix(i, j) == 0
-                rectangle('Position', [j-0.5, i-0.5, 1, 1], ...
-                          'EdgeColor', 'red', ...
-                          'LineWidth', 2);
-            end
+    imagesc(alpha_lik);
+    colormap('Winter'); colorbar;
+    xticks(1:lik_n); yticks(1:lik_n);
+    xticklabels(lik_models); yticklabels(lik_models);
+    title(strrep(mat_files{idx}, '_','\_'));
+    % annotate
+    for i=1:lik_n
+      for j=1:lik_n
+        text(j,i,sprintf('%.2f',alpha_lik(i,j)), ...
+             'HorizontalAlignment','center','Color','white');
+        if sig_lik(i,j)==0
+          rectangle('Position',[j-0.5,i-0.5,1,1], ...
+                    'EdgeColor','red','LineWidth',2);
         end
+      end
     end
 end
+sgtitle(sprintf('Log-Likelihood Comparison (α=%.2f)', significance_level));
 
-sgtitle(sprintf('Log-Likelihood Model Comparison Alpha Matrices (Significance = %.2f)', significance_level));
+
+
+%% ========== COMBINED TESTS ON GLUED INNOVATIONS & LIKELIHOODS ==========
+% Combined MSE
+figure(3); clf;
+[~,~,~,~,~, alpha_MSE_c, sig_MSE_c] = ...
+  model_comparason_MSE(MSE_models, combined_innov, significance_level, contract_index);
+imagesc(alpha_MSE_c);
+colormap('Winter'); colorbar;
+xticks(1:MSE_n); yticks(1:MSE_n);
+xticklabels(MSE_models); yticklabels(MSE_models);
+title('Combined MSE α‐matrix (all files)');
+for i=1:MSE_n
+  for j=1:MSE_n
+    text(j,i,sprintf('%.2f',alpha_MSE_c(i,j)), ...
+         'HorizontalAlignment','center','Color','white');
+    if sig_MSE_c(i,j)==0
+      rectangle('Position',[j-0.5,i-0.5,1,1], ...
+                'EdgeColor','red','LineWidth',2);
+    end
+  end
+end
+
+% Combined Likelihood
+figure(5); clf;
+[~,~,~, alpha_lik_c, sig_lik_c] = ...
+  model_comparason_likelihood(lik_models, combined_lik, significance_level);
+imagesc(alpha_lik_c);
+colormap('Winter'); colorbar;
+xticks(1:lik_n); yticks(1:lik_n);
+xticklabels(lik_models); yticklabels(lik_models);
+title('Combined Likelihood α‐matrix (all files)');
+for i=1:lik_n
+  for j=1:lik_n
+    text(j,i,sprintf('%.2f',alpha_lik_c(i,j)), ...
+         'HorizontalAlignment','center','Color','white');
+    if sig_lik_c(i,j)==0
+      rectangle('Position',[j-0.5,i-0.5,1,1], ...
+                'EdgeColor','red','LineWidth',2);
+    end
+  end
+end
