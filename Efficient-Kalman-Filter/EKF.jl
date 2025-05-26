@@ -257,8 +257,7 @@ function kalman_filter_smoother_lag1(zAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p,
         )
         H_t, u_t, g, Gradient = pricingFunctions.taylorApprox(oAll[t], oIndAll[t], tcAll[t], x_pred[t][1:n_s], I_z_t[t], n_z_t[t])
         R_t = GAll[t]*Σv*GAll[t]'
-        jitter = 1e-8
-        K[t] = P_pred[t]*H_t' * inv(H_t*P_pred[t]*H_t' + R_t + jitter*I)
+        K[t] = P_pred[t]*H_t' * inv(H_t*P_pred[t]*H_t' + R_t)
         #K[t] = P_pred[t]*H_t' * inv(H_t*P_pred[t]*H_t' + R_t)
 
         innovation = vec(zAll[t]) - H_t*x_pred[t] - u_t
