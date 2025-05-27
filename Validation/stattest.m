@@ -1,6 +1,6 @@
 % stattest.m
 clear;
-datapath = "../";
+datapath = "NM_40_EM_4_10/";
 addpath(datapath);
 
 % ——— PREALLOCATE combined containers ———
@@ -36,6 +36,12 @@ MSE_n             = numel(MSE_models);
 
 figure(1); clf;
 for idx = 1:num_files
+    if idx <= 8
+        subplot_idx = idx;
+    else
+        % shift the last two to columns 2 and 3 in row 3
+        subplot_idx = 8 + (idx - 8) + 1;  % 9 -> 10, 10 -> 11
+    end
     S = load(fullfile(datapath, mat_files{idx}));
     % convert times
     times = cellfun(@double, S.times);
@@ -51,16 +57,16 @@ for idx = 1:num_files
     [~,~,~,~,~, alpha_MSE, sig_MSE] = ...
       model_comparason_MSE(MSE_models, innovations, significance_level, contract_index);
     % subplot
-    subplot(rows, cols, idx);
+    subplot(rows, cols, subplot_idx);
     imagesc(alpha_MSE);
-    colormap('Winter'); colorbar;
+    colormap('Abyss'); colorbar;
     xticks(1:MSE_n); yticks(1:MSE_n);
     xticklabels(MSE_models); yticklabels(MSE_models);
     title(strrep(mat_files{idx}, '_','\_'));
     % annotate
     for i=1:MSE_n
       for j=1:MSE_n
-        text(j,i,sprintf('%.2f',alpha_MSE(i,j)), ...
+        text(j,i,sprintf('%.1f%%',alpha_MSE(i,j) *100), ...
              'HorizontalAlignment','center','Color','white');
         if sig_MSE(i,j)==0
           rectangle('Position',[j-0.5,i-0.5,1,1], ...
@@ -78,6 +84,12 @@ lik_n      = numel(lik_models);
 
 figure(2); clf;
 for idx = 1:num_files
+    if idx <= 8
+        subplot_idx = idx;
+    else
+        % shift the last two to columns 2 and 3 in row 3
+        subplot_idx = 8 + (idx - 8) + 1;  % 9 -> 10, 10 -> 11
+    end
     S = load(fullfile(datapath, mat_files{idx}));
     % pack likelihoods
     likelihoods.NM = S.innovation_likelihood_NM;
@@ -89,16 +101,16 @@ for idx = 1:num_files
     [~,~,~, alpha_lik, sig_lik] = ...
       model_comparason_likelihood(lik_models, likelihoods, significance_level);
     % subplot
-    subplot(rows, cols, idx);
+    subplot(rows, cols, subplot_idx);
     imagesc(alpha_lik);
-    colormap('Winter'); colorbar;
+    colormap('Abyss'); colorbar;
     xticks(1:lik_n); yticks(1:lik_n);
     xticklabels(lik_models); yticklabels(lik_models);
     title(strrep(mat_files{idx}, '_','\_'));
     % annotate
     for i=1:lik_n
       for j=1:lik_n
-        text(j,i,sprintf('%.2f',alpha_lik(i,j)), ...
+        text(j,i,sprintf('%.1f%%',alpha_lik(i,j) *100), ...
              'HorizontalAlignment','center','Color','white');
         if sig_lik(i,j)==0
           rectangle('Position',[j-0.5,i-0.5,1,1], ...
@@ -117,13 +129,13 @@ figure(3); clf;
 [~,~,~,~,~, alpha_MSE_c, sig_MSE_c] = ...
   model_comparason_MSE(MSE_models, combined_innov, significance_level, contract_index);
 imagesc(alpha_MSE_c);
-colormap('Winter'); colorbar;
+colormap('Abyss'); colorbar;
 xticks(1:MSE_n); yticks(1:MSE_n);
 xticklabels(MSE_models); yticklabels(MSE_models);
-title('Combined MSE α‐matrix (all files)');
+sgtitle(sprintf('Combined: MSE Comparison (α=%.2f)', significance_level));
 for i=1:MSE_n
   for j=1:MSE_n
-    text(j,i,sprintf('%.2f',alpha_MSE_c(i,j)), ...
+    text(j,i,sprintf('%.1f%%',alpha_MSE_c(i,j) *100), ...
          'HorizontalAlignment','center','Color','white');
     if sig_MSE_c(i,j)==0
       rectangle('Position',[j-0.5,i-0.5,1,1], ...
@@ -137,13 +149,13 @@ figure(5); clf;
 [~,~,~, alpha_lik_c, sig_lik_c] = ...
   model_comparason_likelihood(lik_models, combined_lik, significance_level);
 imagesc(alpha_lik_c);
-colormap('Winter'); colorbar;
+colormap('Abyss'); colorbar;
 xticks(1:lik_n); yticks(1:lik_n);
 xticklabels(lik_models); yticklabels(lik_models);
-title('Combined Likelihood α‐matrix (all files)');
+sgtitle(sprintf('Combined: Log-Likelihood Comparison (α=%.2f)', significance_level));
 for i=1:lik_n
   for j=1:lik_n
-    text(j,i,sprintf('%.2f',alpha_lik_c(i,j)), ...
+    text(j,i,sprintf('%.1f%%',alpha_lik_c(i,j) *100), ...
          'HorizontalAlignment','center','Color','white');
     if sig_lik_c(i,j)==0
       rectangle('Position',[j-0.5,i-0.5,1,1], ...
