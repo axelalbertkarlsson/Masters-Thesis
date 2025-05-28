@@ -255,6 +255,10 @@ function kalman_filter_smoother_lag1(zAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p,
             T0All[t],
             TAll[t]
         )
+        # New addition
+        xpInit = f_t[:,1:size(θg,1)]*θg
+        x_pred[t][1:n_p] = xpInit[t,:]'
+        # New addition ^^
         H_t, u_t, g, Gradient = pricingFunctions.taylorApprox(oAll[t], oIndAll[t], tcAll[t], x_pred[t][1:n_s], I_z_t[t], n_z_t[t])
         R_t = GAll[t]*Σv*GAll[t]'
         K[t] = P_pred[t]*H_t' * inv(H_t*P_pred[t]*H_t' + R_t)
