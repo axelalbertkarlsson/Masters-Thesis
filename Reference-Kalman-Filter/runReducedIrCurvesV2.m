@@ -1,4 +1,6 @@
 % Ricatti recursions
+validationPath = '../Validation';
+addpath(validationPath)
 
 kx = [1E5 ; 1E0 ; 1E2 ; 1E1];
 
@@ -111,6 +113,8 @@ end
     % Behöver inte ef, pga använda bara på Jörgen's \Sigma_w /CJ
     % pl, is not necessary (pl.at) /CJ
 %%% END: Tillagt av CJ för data som behövs i EKF %%%
+TT=length(times);
+plot3DCurve(times(1:TT),(1:size(fH,2))/365 ,fH(1:end,:)', "RKF");
 
 %% Figure
 
