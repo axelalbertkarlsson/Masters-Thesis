@@ -96,7 +96,7 @@ println("Loading psi_final_EM.mat...")
 println("Getting results RKF...")
 fAll_RKF, innov_RKF = getResults(ψ_0, data)
 println("Writing results RKF...")
-write_results("final_RKF.mat", fAll_RKF, innov_RKF, data.times)
+write_results("final_Reg.mat", fAll_RKF, innov_RKF, data.times)
 
 println("Getting results NM...")
 fAll_NM, innov_NM = getResults(ψ_NM, data)
