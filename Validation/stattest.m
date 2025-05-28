@@ -1,6 +1,6 @@
 % stattest.m
 clear;
-datapath = "NM_40_EM_4_10/";
+datapath = "../";
 addpath(datapath);
 
 % ——— PREALLOCATE combined containers ———
