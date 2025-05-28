@@ -197,7 +197,7 @@ function em_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
 
       ψ,
 
-      maxiter=4, tol=1e-3, verbose=true,
+      maxiter=4, tol=1e-3, verbose=true, # Should be 4
 
       θg_bool=false
 
@@ -255,7 +255,7 @@ function nm_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
 
         a0, Σx, Σw, Σv, θF, θg;
 
-        tol=1e-3, maxiter=40, verbose=true,
+        tol=1e-3, maxiter=160, verbose=true, # Should be 160 (40)
 
         Newton_bool=false, θg_bool=false
 
@@ -328,7 +328,6 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
  
 
     for (ci, idxr) in enumerate(ranges)
-
       if ci % 2 != 0
 
         @printf("\n--- Chunk (Ins) %d/%d: Days %d (%s) – %d (%s) ---\n",
@@ -409,7 +408,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
         # candidate ψ
 
-        Σw, Σv, a0, Σx, θF, θg = ψ_cand_NM
+        Σw_NM, Σv_NM, a0_NM, Σx_NM, θF_NM, θg = ψ_cand_NM
 
  
 
@@ -425,7 +424,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
           ins.A_t[idxr], ins.B_t[idxr], ins.D_t[idxr], ins.G_t[idxr],
 
-          Σw, Σv, a0, Σx, θF, θg,
+          Σw_NM, Σv_NM, a0_NM, Σx_NM, θF_NM, θg,
 
           ins.firstDates[idxr], ins.tradeDates[idxr],
 
@@ -439,7 +438,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
         ins.oIndAll[idxr], ins.tcAll[idxr], θg,
 
-        Int.(ins.n_z_t[idxr]), length(idxr), ins.n_s, ins.n_u, ins.G_t[idxr], Σv, P_f
+        Int.(ins.n_z_t[idxr]), length(idxr), ins.n_s, ins.n_u, ins.G_t[idxr], Σv_NM, P_f
 
       )
 
@@ -463,7 +462,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
  
 
-        Σw, Σv, a0, Σx, θF, θg = ψ_cand_EM
+        Σw_EM, Σv_EM, a0_EM, Σx_EM, θF_EM, θg = ψ_cand_EM
 
  
 
@@ -479,7 +478,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
           ins.A_t[idxr], ins.B_t[idxr], ins.D_t[idxr], ins.G_t[idxr],
 
-          Σw, Σv, a0, Σx, θF, θg,
+          Σw_EM, Σv_EM, a0_EM, Σx_EM, θF_EM, θg,
 
           ins.firstDates[idxr], ins.tradeDates[idxr],
 
@@ -493,7 +492,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
         ins.oIndAll[idxr], ins.tcAll[idxr], θg,
 
-        Int.(ins.n_z_t[idxr]), length(idxr), ins.n_s, ins.n_u, ins.G_t[idxr], Σv, P_f
+        Int.(ins.n_z_t[idxr]), length(idxr), ins.n_s, ins.n_u, ins.G_t[idxr], Σv_EM, P_f
 
       )
 
@@ -521,23 +520,26 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
         innovationAll_RKF = ins.innovationAll[idxr]
 
+        logLikelihoodAll_RKF = ins.logLikelihoodAll[idxr]
+
  
 
         filename = excel_date_to_datestring(ins.times[first(idxr)])* "_OOS_" * excel_date_to_datestring(ins.times[last(idxr)])*".mat"
 
- 
+        firstIndex = first(idxr)
+        lastIndex = last(idxr)
 
         outputData.write_results(
 
           filename,
 
-          fAll_NM,  zPredAll_NM,   innovationAll_NM,   innovation_likelihood_NM,  nm_times,   nm_alloc,   nm_iters,
+          fAll_NM,  zPredAll_NM,   innovationAll_NM,   innovation_likelihood_NM,  nm_times,   nm_alloc,   nm_iters, Σw_NM,  Σv_NM,  a0_NM,  Σx_NM,  θF_NM,
 
-          fAll_EM,  zPredAll_EM,   innovationAll_EM,   innovation_likelihood_EM,  em_times,   em_alloc,   em_iters,
+          fAll_EM,  zPredAll_EM,   innovationAll_EM,   innovation_likelihood_EM,  em_times,   em_alloc,   em_iters, Σw_EM,  Σv_EM,  a0_EM,  Σx_EM,  θF_EM,
 
-          zPredAll_RKF,  innovationAll_RKF,
+          zPredAll_RKF,  innovationAll_RKF, logLikelihoodAll_RKF,
 
-          ins.times[idxr]
+          ins.times[idxr], θg, firstIndex, lastIndex
 
         )
 

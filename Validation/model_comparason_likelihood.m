@@ -27,7 +27,7 @@ function [bar_d_matrix, z_matrix, p_matrix, alpha_matrix, significance_matrix] =
             % Compute d_{i,k} via double loop
             d = zeros(T);
             for t = 1:T
-                d(t) = (ell_i{t}) - (ell_j{t});
+                d(t) = (abs(ell_i{t})) - abs((ell_j{t}));
             end
             
             % Compute bar_d

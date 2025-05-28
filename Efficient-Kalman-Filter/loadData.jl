@@ -37,6 +37,7 @@ struct KalmanData{T<:AbstractFloat}
     f_t::Matrix{T}
     innovationAll::Vector{Vector{T}}
     zPredAll::Vector{Vector{T}}
+    logLikelihoodAll::Vector{T}
 
     # sizes
     n_c::Int
@@ -96,6 +97,7 @@ function load64(data_folder::String)
     innovation64   = [Float64.(vec(m)) for m in raw_innovation]
     raw_zPred = vec(vars[:zPredAll])  
     zPred64   = [Float64.(vec(m)) for m in raw_zPred]
+    logLikelihood = Float64.(vec(vars[:logLikelihoodAll]))
 
     ft  = Float64.(vars[:f_t])
 
@@ -113,7 +115,7 @@ function load64(data_folder::String)
       # Psi0
       Σv, Σw, Σx, ax, θF, θg,
       # RefKF
-      At, Bt, Dt, Gt, Iz, ft,innovation64, zPred64,
+      At, Bt, Dt, Gt, Iz, ft,innovation64, zPred64, logLikelihood,
       # sizes
       nc, np, ns, n_t, nu, nx, n_z
     )
@@ -152,6 +154,7 @@ function convert_to_f32(kd::KalmanData{Float64})
       Float32.(kd.f_t),
       [Float32.(v) for v in kd.innovationAll],
       [Float32.(v) for v in kd.zPredAll],
+      Float32.(kd.logLikelihoodAll),
       # sizes
       kd.n_c, kd.n_p, kd.n_s, kd.n_t, kd.n_u, kd.n_x,
       Float32.(kd.n_z_t)
@@ -197,6 +200,7 @@ function split_data(kd::KalmanData{T}, ratio::Float64) where {T}
       kd.f_t[1:idx, :],
       kd.innovationAll[1:idx],
       kd.zPredAll[1:idx],
+      kd.logLikelihoodAll[1:idx],
       kd.n_c, kd.n_p, kd.n_s, idx, kd.n_u, kd.n_x,
       kd.n_z_t[1:idx]
     )
@@ -219,7 +223,8 @@ function split_data(kd::KalmanData{T}, ratio::Float64) where {T}
       kd.I_z_t[idx+1:end],
       kd.f_t[idx+1:end, :],
       kd.innovationAll[idx+1:end],
-      kd.zPredAll[idx+1:end],    
+      kd.zPredAll[idx+1:end],   
+      kd.logLikelihoodAll[idx+1:end], 
       kd.n_c, kd.n_p, kd.n_s, n-idx, kd.n_u, kd.n_x,
       kd.n_z_t[idx+1:end]
     )

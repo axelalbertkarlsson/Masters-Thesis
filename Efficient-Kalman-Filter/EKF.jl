@@ -136,7 +136,7 @@ function EM(
         vecψ0 = pack(Σw, Σv, θF, θg)
         
         #vecψ_opt = optimize_parameters(q2obj_struct, vecψ0; tol=1e-8, maxiter)
-        vecψ_opt, its, alloc, cnt = optimize_parameters_forwarddiff(q2obj_struct, vecψ0; tol=1e-8, maxiter=10)
+        vecψ_opt, its, alloc, cnt = optimize_parameters_forwarddiff(q2obj_struct, vecψ0; tol=1e-8, maxiter=10) # Should be maxiter=10
 
         # accumulate
         append!(em_times, its)
@@ -276,8 +276,7 @@ function kalman_filter_smoother_lag1(zAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p,
 
     for t = T-1:-1:1
         #S[t] = P_filt[t]*(AAll[t+1]*Diagonal(θF)*BAll[t+1])'*inv(P_pred[t+1])
-        jitter = 1e-8
-        S[t] = P_filt[t]*(AAll[t+1]*Diagonal(θF)*BAll[t+1])' * inv(P_pred[t+1] + jitter*I)
+        S[t] = P_filt[t]*(AAll[t+1]*Diagonal(θF)*BAll[t+1])' * inv(P_pred[t+1])
 
         x_smooth[t] += S[t]*(x_smooth[t+1] - x_pred[t+1])
         P_smooth[t] += S[t]*(P_smooth[t+1] - P_pred[t+1])*S[t]'
@@ -414,6 +413,10 @@ function NM(
 
         # t=1
         x_pred[1] = AAll[1] * (θF .* (BAll[1] * a0))
+        # New addition
+        xpInit = f_t[:,1:size(θg,1)]*θg
+        x_pred[1][1:n_p] = xpInit[1,:]'
+        # New addition ^^
         K0 = BAll[1] * Σx * BAll[1]'
         WeightedK0 = K0 .* (θF * θF')
         P_pred[1] = AAll[1] * WeightedK0 * AAll[1]' + DAll[1] * Σw * DAll[1]'
@@ -431,6 +434,10 @@ function NM(
         # t=2:T
         for t in 2:n_t
             x_pred[t] = AAll[t] * (θF .* (BAll[t] * x_filt_loc[t-1]))
+            # New addition
+            xpInit = f_t[:,1:size(θg,1)]*θg
+            x_pred[t][1:n_p] = xpInit[t,:]'
+            # New addition ^^
             Kt = BAll[t] * P_filt_loc[t-1] * BAll[t]'
             Wt = Kt .* (θF * θF')
             P_pred[t] = AAll[t] * Wt * AAll[t]' + DAll[t] * Σw * DAll[t]'

@@ -18,7 +18,7 @@ function calculateRateAndRepricing(EAll, zAll, I_z_t, xAll, oAll, oIndAll, tcAll
     fAll = zeros(n_rows, T)    
     zPredAll = Vector{Vector{Float64}}(undef, T)
     innovationAll = deepcopy(zAll);
-    innovationLik = 0.0
+    innovationLik = zeros(size(zAll,1),1);
 
     for t in 1:T
         x = xAll[t]
@@ -45,7 +45,7 @@ function calculateRateAndRepricing(EAll, zAll, I_z_t, xAll, oAll, oIndAll, tcAll
         GAll[t] * Σv * GAll[t]'
 
        # 3) accumulate the log‐likelihood
-        innovationLik -= 0.5 * (
+        innovationLik[t] = -0.5*(
             n_z_t[t]*log(2π) +        # dimension term
             logdet(S) +               # log-determinant
             innovationAll[t]' * (S \ innovationAll[t])              # Mahalanobis term
@@ -74,9 +74,11 @@ end
 function write_results(
     filename::AbstractString,
     fAll_NM, zPredNMAll, innovationAll_NM, innovation_likelihood_NM, times_NM, alloc_NM, iters_NM,
+    Σw_NM,  Σv_NM,  a0_NM,  Σx_NM,  θF_NM,
     fAll_EM, zPredEMAll, innovationAll_EM, innovation_likelihood_EM, times_EM, alloc_EM, iters_EM,
-    zPredRKFAll, innovationAll_RKF,
-    times
+    Σw_EM,  Σv_EM,  a0_EM,  Σx_EM,  θF_EM,
+    zPredRKFAll, innovationAll_RKF, logLikelihoodAll_RKF,
+    times, θg, firstIndex, lastIndex
 )
     # helper: wrap every element (scalar or vector) into a column vector
     function cellify(x)
@@ -99,6 +101,12 @@ function write_results(
         write(f, "alloc_NM", alloc_NM)
         write(f, "iters_NM", iters_NM)
 
+        write(f, "Sigma_w_NM", Σw_NM)
+        write(f, "Sigma_v_NM", Σv_NM)
+        write(f, "Sigma_x_NM", Σx_NM)
+        write(f, "a0_NM", a0_NM)
+        write(f, "theta_F_NM", θF_NM)
+
         write(f, "zPredEMAll",               cellify(zPredEMAll))
         write(f, "innovationAll_EM",         cellify(innovationAll_EM))
         write(f, "innovation_likelihood_EM", cellify(innovation_likelihood_EM))
@@ -106,10 +114,20 @@ function write_results(
         write(f, "alloc_EM", alloc_EM)
         write(f, "iters_EM", iters_EM)
 
+        write(f, "Sigma_w_EM", Σw_EM)
+        write(f, "Sigma_v_EM", Σv_EM)
+        write(f, "Sigma_x_EM", Σx_EM)
+        write(f, "a0_EM", a0_EM)
+        write(f, "theta_F_EM", θF_EM)
+
         write(f, "zPredRKFAll",              cellify(zPredRKFAll))
         write(f, "innovationAll_RKF",        cellify(innovationAll_RKF))
+        write(f, "innovation_likelihood_RKF", cellify(logLikelihoodAll_RKF))
 
         write(f, "times",                    cellify(times))
+        write(f, "theta_g", θg)
+        write(f, "firstIndex", firstIndex)
+        write(f, "lastIndex", lastIndex)
     end
 end
 
