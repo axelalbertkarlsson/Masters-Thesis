@@ -83,13 +83,43 @@ end
     %save('pricingData.mat', 'idContracts', 'firstDates', 'tradeDates','TAll', 'T0All', 'oIndAll', 'tcAll');
 % Kalman filter: I^z_t, G_t, D_t, A_t, B_t
     innovationAll = cell(length(times), 1);
+    logLikelihoodAll = cell(length(times), 1);
     zPredAll = cell(length(times), 1);
+    P_predAll = cell(length(times), 1);
+    P_filtAll = cell(length(times), 1);
+    P_predAll{1} = (K.A{1}*diag(thetaF)*K.B{1})*diag(Sigmax)*(K.A{1}*diag(thetaF)*K.B{1})' + K.D{1}*diag(Sigmaw)*K.D{1}';
     for t=1:length(times)
+        if t > 1
+            P_predAll{t} = K.A{t}*diag(thetaF)*K.B{t} * P_filtAll{t-1} * (K.A{t}*diag(thetaF)*K.B{t})' + K.D{t}*diag(Sigmaw)*K.D{t}';
+        end
         [g, G] = taylorInstrPC(K.pl, K.atAll{t}, K.oAll{t}, K.oIndAll{t}, K.tcAll{t}, K.x{t}(1:K.ns));
         H = [G K.Iz{t}];
         z_pred = H*K.x{t};
         zPredAll{t} = z_pred;
         innovationAll{t} = zAll{t}-z_pred;
+        % if size(K.G{t},1) == 27
+        %     K.G{t} = K.G{t}(:,1:end-1);
+        % elseif size(K.G{t},1) == 26
+        %     K.G{t} = K.G{t}(:,1:end-2);
+        % elseif size(K.G{t},1) == 25
+        %     K.G{t} = K.G{t}(:,1:end-3);
+        % end
+        KG = P_predAll{t}*H' * inv(H*P_predAll{t}*H' + K.G{t}*diag(Sigmav)*K.G{t}');
+        tmp = KG*H;
+        size_eye = size(tmp);
+        P_filtAll{t} = (eye(size_eye) - tmp) * P_predAll{t};
+        
+        U = chol(cov_innovation);
+        logdet = 2 * sum(log(diag(U)));
+
+        cov_innovation = H * P_predAll{t} * H'+K.G{t}*diag(Sigmav)*K.G{t}';
+        logLikelihoodAll{t} = -0.5 * ( ...
+            K.nz(t) * log(2*pi) + ...                     % dimension term
+            logdet + ...                % log-determinant term
+            innovationAll{t}' * (cov_innovation \ innovationAll{t}) ...  % Mahalanobis term
+        );
+
+
     end
     I_z_t = cellfun(@full, K.Iz, 'UniformOutput',false);
     G_t = cellfun(@full, K.G, 'UniformOutput',false);
@@ -104,7 +134,7 @@ end
     n_c = K.nc; %x_c dimension scalar (also used as nSteps) /CJ
     n_p = K.np; %x_p dimension scalar /CJ
     n_t = K.nt; %observation dimension scalar /CJ
-    %save('refKFVariables.mat', 'I_z_t', 'G_t', 'D_t','A_t','B_t','f_t', 'n_x', 'n_z_t', 'n_u', 'n_s', 'n_c', 'n_p', 'n_t','innovationAll','zPredAll'); 
+    %save('refKFVariables.mat', 'I_z_t', 'G_t', 'D_t','A_t','B_t','f_t', 'n_x', 'n_z_t', 'n_u', 'n_s', 'n_c', 'n_p', 'n_t','innovationAll','zPredAll', 'logLikelihoodAll'); 
 % Behövs inte från CurvesInit
     % times behövs inte vad jag kan se /CJ
     % usedInstr behövs inte vad jag kan se /CJ
