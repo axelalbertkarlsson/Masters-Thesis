@@ -5,7 +5,7 @@ addpath(datapath);
 
 % List of .mat filenames
 mat_files = {
-    'final_RKF.mat',
+    'final_Reg.mat',
     'final_NM.mat',
     'final_EM.mat'
 };
