@@ -73,8 +73,8 @@ end
 
 println("Loading initial data...")
 data = loadData.run(joinpath("Efficient-Kalman-Filter","Data"))
-split = loadData.split_data(data, 0.5)
-ins, outs = split.insample, split.outsample
+# split = loadData.split_data(data, 0.5)
+# ins, outs = split.insample, split.outsample
 
 # Load psi_final_NM variables
 println("Loading psi_final_NM.mat...")
@@ -93,14 +93,20 @@ println("Loading psi_final_EM.mat...")
   data.theta_g
 )
 
-fAll_RKF, innov_RKF = getResults(ψ_0, outs)
-write_results("final_RKF.mat", fAll_RKF, innov_RKF, outs.times)
+println("Getting results RKF...")
+fAll_RKF, innov_RKF = getResults(ψ_0, data)
+println("Writing results RKF...")
+write_results("final_RKF.mat", fAll_RKF, innov_RKF, data.times)
 
-fAll_NM, innov_NM = getResults(ψ_NM, outs)
-write_results("final_NM.mat", fAll_NM, innov_NM, outs.times)
+println("Getting results NM...")
+fAll_NM, innov_NM = getResults(ψ_NM, data)
+println("Writing results NM...")
+write_results("final_NM.mat", fAll_NM, innov_NM, data.times)
 
-fAll_EM, innov_EM = getResults(ψ_EM, outs)
-write_results("final_EM.mat", fAll_EM, innov_EM, outs.times)
+println("Getting results EM...")
+fAll_EM, innov_EM = getResults(ψ_EM, data)
+println("Writing results EM...")
+write_results("final_EM.mat", fAll_EM, innov_EM, data.times)
 
 
 
