@@ -21,7 +21,7 @@ mat_files = {
     '2018-10-02_OOS_2019-10-07.mat',
     '2020-10-12_OOS_2021-10-12.mat',
     '2022-10-12_OOS_2023-10-12.mat',
-    '2024-10-17_OOS_2025-04-09.mat'
+    '2024-10-17_OOS_2025-04-17.mat'
 };
 
 num_files = numel(mat_files);
@@ -76,7 +76,45 @@ for idx = 1:num_files
     end
 end
 sgtitle(sprintf('MSE Comparison (α=%.2f)', significance_level));
-
+%% AXEL VERSION OF ABOVE
+rows = 5;
+cols = 2;
+figure(1); clf;
+for idx = 1:num_files
+    subplot(rows, cols, idx);  % simple linear indexing
+    S = load(fullfile(datapath, mat_files{idx}));
+    % convert times
+    times = cellfun(@double, S.times);
+    % pack innovations
+    innovations.RKF = S.innovationAll_RKF;
+    innovations.NM  = S.innovationAll_NM;
+    innovations.EM  = S.innovationAll_EM;
+    % append to combined
+    combined_innov.RKF = [combined_innov.RKF; innovations.RKF(:)];
+    combined_innov.NM  = [combined_innov.NM;  innovations.NM(:)];
+    combined_innov.EM  = [combined_innov.EM;  innovations.EM(:)];
+    % compute α‐matrix
+    [~,~,~,~,~, alpha_MSE, sig_MSE] = ...
+      model_comparason_MSE(MSE_models, innovations, significance_level, contract_index);
+    % subplot
+    imagesc(alpha_MSE);
+    colormap('Abyss'); colorbar;
+    xticks(1:MSE_n); yticks(1:MSE_n);
+    xticklabels(MSE_models); yticklabels(MSE_models);
+    title(strrep(mat_files{idx}, '_','\_'));
+    % annotate
+    for i=1:MSE_n
+      for j=1:MSE_n
+        text(j,i,sprintf('%.1f%%',alpha_MSE(i,j) *100), ...
+             'HorizontalAlignment','center','Color','white');
+        if sig_MSE(i,j)==0
+          rectangle('Position',[j-0.5,i-0.5,1,1], ...
+                    'EdgeColor','red','LineWidth',2);
+        end
+      end
+    end
+end
+sgtitle(sprintf('MSE Comparison (α=%.2f)', significance_level));
 
 %% ==================== Likelihood per‐file ====================
 lik_models = ["NM","EM"];
@@ -111,7 +149,7 @@ for idx = 1:num_files
     for i=1:lik_n
       for j=1:lik_n
         text(j,i,sprintf('%.1f%%',alpha_lik(i,j) *100), ...
-             'HorizontalAlignment','center','Color','white');
+             'HorizontalAlignment','center','Color','white','FontSize', 12);
         if sig_lik(i,j)==0
           rectangle('Position',[j-0.5,i-0.5,1,1], ...
                     'EdgeColor','red','LineWidth',2);
@@ -121,7 +159,45 @@ for idx = 1:num_files
 end
 sgtitle(sprintf('Log-Likelihood Comparison (α=%.2f)', significance_level));
 
+%% AXEL VERSION OF ABOVE 
+lik_models = ["NM","EM"];
+lik_n      = numel(lik_models);
+rows = 5;
+cols = 2;
 
+figure(2); clf;
+for idx = 1:num_files
+    subplot(rows, cols, idx);
+    S = load(fullfile(datapath, mat_files{idx}));
+    % pack likelihoods
+    likelihoods.NM = S.innovation_likelihood_NM;
+    likelihoods.EM = S.innovation_likelihood_EM;
+    % append to combined
+    combined_lik.NM = [combined_lik.NM; likelihoods.NM(:)];
+    combined_lik.EM = [combined_lik.EM; likelihoods.EM(:)];
+    % compute α‐matrix
+    [~,~,~, alpha_lik, sig_lik] = ...
+      model_comparason_likelihood(lik_models, likelihoods, significance_level);
+    % subplot
+    imagesc(alpha_lik);
+    colormap('Abyss'); colorbar;
+    xticks(1:lik_n); yticks(1:lik_n);
+    xticklabels(lik_models); yticklabels(lik_models);
+    title(strrep(mat_files{idx}, '_','\_'));
+    % annotate
+    for i=1:lik_n
+      for j=1:lik_n
+        text(j,i,sprintf('%.1f%%',alpha_lik(i,j) *100), ...
+             'HorizontalAlignment','center','Color','white', ...
+             'FontSize', 12);
+        if sig_lik(i,j)==0
+          rectangle('Position',[j-0.5,i-0.5,1,1], ...
+                    'EdgeColor','red','LineWidth',2);
+        end
+      end
+    end
+end
+sgtitle(sprintf('Log-Likelihood Comparison (α=%.2f)', significance_level));
 
 %% ========== COMBINED TESTS ON GLUED INNOVATIONS & LIKELIHOODS ==========
 % Combined MSE
