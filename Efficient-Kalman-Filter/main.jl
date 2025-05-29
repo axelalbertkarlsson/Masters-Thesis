@@ -141,13 +141,13 @@ function plot_idxr(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, subtitle,  idxr)
 
     # Plot Forward Rate Curve (Should be done in Matlab instead)   
 
-    plt = plots.plot3DCurve(ins.times[idxr], fAll, subtitle)
+    #plt = plots.plot3DCurve(ins.times[idxr], fAll, subtitle)
 
-    display(plt)
+    # display(plt)
 
-    print(subtitle)
+    # print(subtitle)
 
-    println(" - Plot Done")
+    # println(" - Plot Done")
 
 end
 
@@ -197,7 +197,7 @@ function em_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
 
       ψ,
 
-      maxiter=4, tol=1e-3, verbose=true, # Should be 4
+      maxiter=1, tol=1e-8, verbose=true, # Should be 4
 
       θg_bool=false
 
@@ -255,7 +255,7 @@ function nm_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
 
         a0, Σx, Σw, Σv, θF, θg;
 
-        tol=1e-3, maxiter=160, verbose=true, # Should be 160 (40)
+        tol=1e-8, maxiter=40, verbose=true, # Should be 160 (40)
 
         Newton_bool=false, θg_bool=false
 
@@ -328,6 +328,9 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
  
 
     for (ci, idxr) in enumerate(ranges)
+      if ci == 1 || ci == 2
+        continue      # jump immediately to the next i
+      end
       if ci % 2 != 0
 
         @printf("\n--- Chunk (Ins) %d/%d: Days %d (%s) – %d (%s) ---\n",
@@ -340,64 +343,59 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
         ψ_cand_EM, em_times, em_alloc, em_iters = em_on_chunk(ψ_EM, ins, idxr)
 
-        mse_cand_NM, mae_cand_NM, _ = compute_ins_mse(ψ_cand_NM, ins, "No Plot")
+        # mse_cand_NM, mae_cand_NM, _ = compute_ins_mse(ψ_cand_NM, ins, "No Plot")
 
-        mse_cand_EM, mae_cand_EM, _ = compute_ins_mse(ψ_cand_EM, ins, "No Plot")
+        # mse_cand_EM, mae_cand_EM, _ = compute_ins_mse(ψ_cand_EM, ins, "No Plot")
 
-        plot_idxr(ψ0, ins, "Regular Nr: $ci",  idxr)
+        # plot_idxr(ψ0, ins, "Regular Nr: $ci",  idxr)
 
-        plot_idxr(ψ_cand_NM, ins, "NM Nr: $ci",  idxr)
+        # plot_idxr(ψ_cand_NM, ins, "NM Nr: $ci",  idxr)
 
-        plot_idxr(ψ_cand_EM, ins, "EM Nr: $ci",  idxr)
-
- 
-
-        MLE = "NM"
-
-        delta = mse_cand_NM - baseline_mse_NM
-
-        @printf("Old MSE = %.5e, New MSE (%s) = %.5e, Δ = %+.5e\n",
-
-                baseline_mse_NM, MLE, mse_cand_NM, delta)
-
-        if mse_cand_NM < baseline_mse_NM
-
-            ψ_NM, baseline_mse_NM, baseline_mae_NM = ψ_cand_NM, mse_cand_NM, mae_cand_NM
-
-            println("⇒ Accepted new ψ for ("*MLE*").")
-
-        else
-
-            println("⇒ Rejected; retained previous ψ for ("*MLE*").")
-
-        end
+        # plot_idxr(ψ_cand_EM, ins, "EM Nr: $ci",  idxr)
 
  
 
-        MLE = "EM"
+        # MLE = "NM"
 
-        delta = mse_cand_EM - baseline_mse_EM
+        # delta = mse_cand_NM - baseline_mse_NM
 
-        @printf("Old MSE = %.5e, New MSE (%s) = %.5e, Δ = %+.5e\n",
+        # @printf("Old MSE = %.5e, New MSE (%s) = %.5e, Δ = %+.5e\n",
 
-                baseline_mse_EM, MLE, mse_cand_EM, delta)
+        #         baseline_mse_NM, MLE, mse_cand_NM, delta)
 
-        if mse_cand_EM < baseline_mse_EM
+        # if mse_cand_NM < baseline_mse_NM
 
-            ψ_EM, baseline_mse_EM, baseline_mae_EM = ψ_cand_EM, mse_cand_EM, mae_cand_EM
+        #     ψ_NM, baseline_mse_NM, baseline_mae_NM = ψ_cand_NM, mse_cand_NM, mae_cand_NM
 
-            println("⇒ Accepted new ψ for ("*MLE*").")
+        #     println("⇒ Accepted new ψ for ("*MLE*").")
 
-        else
+        # else
 
-            println("⇒ Rejected; retained previous ψ for ("*MLE*").")
+        #     println("⇒ Rejected; retained previous ψ for ("*MLE*").")
 
-        end
+        # end
 
  
 
-     
+        # MLE = "EM"
 
+        # delta = mse_cand_EM - baseline_mse_EM
+
+        # @printf("Old MSE = %.5e, New MSE (%s) = %.5e, Δ = %+.5e\n",
+
+        #         baseline_mse_EM, MLE, mse_cand_EM, delta)
+
+        # if mse_cand_EM < baseline_mse_EM
+
+        #     ψ_EM, baseline_mse_EM, baseline_mae_EM = ψ_cand_EM, mse_cand_EM, mae_cand_EM
+
+        #     println("⇒ Accepted new ψ for ("*MLE*").")
+
+        # else
+
+        #     println("⇒ Rejected; retained previous ψ for ("*MLE*").")
+
+        # end
         #plots.plot_benchmarks(nm_times, nm_alloc, em_times, em_alloc)
 
       else
@@ -494,7 +492,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
         Int.(ins.n_z_t[idxr]), length(idxr), ins.n_s, ins.n_u, ins.G_t[idxr], Σv_EM, P_f
 
-      )
+        )
 
         # zPredAll_EM, innovationAll_EM, innovation_likelihood_EM = EKF.calcOutOfSample(
 
@@ -547,81 +545,81 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
     end
 
-    Σw_f, Σv_f, a0_f, Σx_f, θF_f, θg_f = ψ_NM
+    # Σw_f, Σv_f, a0_f, Σx_f, θF_f, θg_f = ψ_NM
 
-    matwrite("psi_final_NM.mat", Dict(
-
- 
-
-      "Sigma_w"  => Σw_f,
+    # matwrite("psi_final_NM.mat", Dict(
 
  
 
-      "Sigma_v"  => Σv_f,
+    #   "Sigma_w"  => Σw_f,
 
  
 
-      "a0"       => a0_f,
+    #   "Sigma_v"  => Σv_f,
 
  
 
-     "Sigma_x"  => Σx_f,
+    #   "a0"       => a0_f,
 
  
 
-      "theta_F"  => θF_f,
+    #  "Sigma_x"  => Σx_f,
 
  
 
-      "theta_g"  => θg_f,
+    #   "theta_F"  => θF_f,
 
  
 
-    ))
+    #   "theta_g"  => θg_f,
 
  
 
-    println("Saved ψ_final → psi_final_NM.mat")
-
-    Σw_f, Σv_f, a0_f, Σx_f, θF_f, θg_f = ψ_EM
-
-    matwrite("psi_final_EM.mat", Dict(
+    # ))
 
  
 
-      "Sigma_w"  => Σw_f,
+    # println("Saved ψ_final → psi_final_NM.mat")
+
+    # Σw_f, Σv_f, a0_f, Σx_f, θF_f, θg_f = ψ_EM
+
+    # matwrite("psi_final_EM.mat", Dict(
 
  
 
-      "Sigma_v"  => Σv_f,
+    #   "Sigma_w"  => Σw_f,
 
  
 
-      "a0"       => a0_f,
+    #   "Sigma_v"  => Σv_f,
 
  
 
-      "Sigma_x"  => Σx_f,
+    #   "a0"       => a0_f,
 
  
 
-      "theta_F"  => θF_f,
+    #   "Sigma_x"  => Σx_f,
 
  
 
-      "theta_g"  => θg_f,
+    #   "theta_F"  => θF_f,
 
  
 
-    ))
+    #   "theta_g"  => θg_f,
 
  
 
-    println("Saved ψ_final → psi_final_EM.mat")
+    # ))
+
+ 
+
+    # println("Saved ψ_final → psi_final_EM.mat")
 
   end
 
-    return ψ_NM, ψ_EM
+    # return ψ_NM, ψ_EM
 
 end
 
@@ -663,26 +661,27 @@ ins, outs = split.insample, split.outsample
 
 # rolling-window NM
 
-ψ_final_NM, ψ_final_EM = rolling_optimize(ins, outs, ψ0)
+#ψ_final_NM, ψ_final_EM = rolling_optimize(ins, outs, ψ0)
 
+rolling_optimize(ins, outs, ψ0)
  
 
 # final in-sample comparison
 
-mse_reg, mae_reg, _ = compute_ins_mse(ψ0, ins, "Regular")
+ #mse_reg, mae_reg, _ = compute_ins_mse(ψ0, ins, "Regular")
 
-mse_NM, mae_NM, zPredNMAll = compute_ins_mse(ψ_final_NM, ins, "Final (NM)")
+# mse_NM, mae_NM, zPredNMAll = compute_ins_mse(ψ_final_NM, ins, "Final (NM)")
 
-mse_EM, mae_EM, zPredEMAll = compute_ins_mse(ψ_final_EM, ins, "Final (EM)")
+# mse_EM, mae_EM, zPredEMAll = compute_ins_mse(ψ_final_EM, ins, "Final (EM)")
 
  
 
-println("\n=== Final out-sample Comparison ===")
+# println("\n=== Final out-sample Comparison ===")
 
-@printf("Initial ψ₀ → MSE = %.5e, MAE = %.5e\n", mse_reg, mae_reg)
+# @printf("Initial ψ₀ → MSE = %.5e, MAE = %.5e\n", mse_reg, mae_reg)
 
-@printf("Final ψ_final_NM → MSE = %.5e, MAE = %.5e\n", mse_NM, mae_NM)
+# @printf("Final ψ_final_NM → MSE = %.5e, MAE = %.5e\n", mse_NM, mae_NM)
 
-@printf("Final ψ_final_EM → MSE = %.5e, MAE = %.5e\n", mse_EM, mae_EM)
+# @printf("Final ψ_final_EM → MSE = %.5e, MAE = %.5e\n", mse_EM, mae_EM)
 
-@printf("RKF → MSE = %.5e, MAE = %.5e\n", outputData.calculateMSE(ins.innovationAll)...)
+# @printf("RKF → MSE = %.5e, MAE = %.5e\n", outputData.calculateMSE(ins.innovationAll)...)

@@ -19,6 +19,7 @@ function calculateRateAndRepricing(EAll, zAll, I_z_t, xAll, oAll, oIndAll, tcAll
     zPredAll = Vector{Vector{Float64}}(undef, T)
     innovationAll = deepcopy(zAll);
     innovationLik = zeros(size(zAll,1),1);
+    last_lik = 0.0
 
     for t in 1:T
         x = xAll[t]
@@ -44,12 +45,16 @@ function calculateRateAndRepricing(EAll, zAll, I_z_t, xAll, oAll, oIndAll, tcAll
         S = H_t * P_predAll[t] * H_t' +
         GAll[t] * Σv * GAll[t]'
 
-       # 3) accumulate the log‐likelihood
-        innovationLik[t] = -0.5*(
-            n_z_t[t]*log(2π) +        # dimension term
-            logdet(S) +               # log-determinant
-            innovationAll[t]' * (S \ innovationAll[t])              # Mahalanobis term
-        )
+        try
+            ld = logdet(S)                           # may still throw
+            quad = innovationAll[t]' * (S \ innovationAll[t])
+            innovationLik[t] = -0.5 * (n_z_t[t]*log(2π) + ld + quad)
+            last_lik = innovationLik[t]             # update fallback
+        catch e
+            @warn "Failure at t=$t computing likelihood: $e. Using fallback = $last_lik"
+            # fall back to the mean of all previously‐computed liks (or last_lik)
+            innovationLik[t] = t > 1 ? Statistics.mean(innovationLik[1:t-1]) : last_lik
+        end
 
     end
 

@@ -124,6 +124,12 @@ function optimize_parameters(
     @info "Starting unconstrained BFGS…"
     bench = @timed res = optimize(f, grad!, x0, inner_method, opts)
 
+    if Optim.converged(res)
+      @info "NM BFGS converged in $(res.iterations) steps" status=res
+    else
+      @warn "NM BFGS did NOT converge" status=res
+    end
+
     stamps     = [t0; iters_ns]
     iter_times = diff(stamps) ./ 1e9
 
@@ -192,9 +198,9 @@ function optimize_parameters_forwarddiff(
   iter_times = diff(stamps) ./ 1e9
 
   if Optim.converged(res)
-    @info "ForwardDiff BFGS converged in $(res.iterations) steps"
+    @info "EM BFGS converged in $(res.iterations) steps" status=res
   else
-    @warn "ForwardDiff BFGS did NOT converge" status=res
+    @warn "EM BFGS did NOT converge" status=res
   end
 
   x_star      = Optim.minimizer(res)
