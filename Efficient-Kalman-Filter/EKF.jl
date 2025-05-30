@@ -56,23 +56,22 @@ function (q::Q2Objective)(vecψ)
     return 0.5 * Q2
 end
 
-# function safe_inv_spd!(S::AbstractMatrix{T}) where T<:Real
-#     # add jitter until S is finite and SPD
-#     jitter = 1e-8
-#     for _ in 1:5
-#       if all(isfinite, S)
-#         # try a cheap SPD check
-#         try 
-#           cholesky(S; check=true)
-#           return S
-#         catch
-#         end
-#       end
-#       S .+= jitter .* I(size(S,1))
-#       jitter *= 10
-#     end
-#     error("Could not regularize S to SPD")
-#   end
+function safe_inv_spd!(S::AbstractMatrix{T}) where T<:Real
+    # add jitter until S is finite and SPD
+    jitter = 1e-8
+    for _ in 1:5
+      if all(isfinite, S)
+        # try a cheap SPD check
+        try 
+          cholesky(S; check=true)
+          return S
+        catch
+        end
+      end
+      S .+= jitter .* I(size(S,1))
+      jitter *= 10
+    end
+  end
 
 function EM(
     zAll, oIndAll, tcAll, I_z_t, f_t,
@@ -86,21 +85,7 @@ function EM(
     θg_bool::Bool=false
 )
     Σw, Σv, a0, Σx, θF, θg = ψ0
-    jitter = 1e-6
-
-    θF = clamp.(θF, -1 + 1e-6, 1 - 1e-6)
-
-    Σw = Symmetric((Σw + Σw')/2)
-    Σv = Symmetric((Σv + Σv')/2)
-    Σx = Symmetric((Σx + Σx')/2)
-
-    Lw = cholesky(Σw + jitter*I).L
-    Lv = cholesky(Σv + jitter*I).L
-    Lx = cholesky(Σx + jitter*I).L
-
-    Σw = Lw * Lw'
-    Σv = Lv * Lv'
-    Σx = Lx * Lx'
+    jitter = 1e-8
 
     function make_packers(n_x, n_u, θF, θg, θg_bool)
         function pack(Σw, Σv, θF, θg)
@@ -167,7 +152,7 @@ function EM(
         vecψ0 = pack(Σw, Σv, θF, θg)
         
         #vecψ_opt = optimize_parameters(q2obj_struct, vecψ0; tol=1e-8, maxiter)
-        vecψ_opt, its, alloc, cnt = optimize_parameters_forwarddiff(q2obj_struct, vecψ0; tol=1e-6, maxiter=10) # Should be maxiter=10
+        vecψ_opt, its, alloc, cnt = optimize_parameters_forwarddiff(q2obj_struct, vecψ0; tol=1e-8, maxiter=5) # Should be maxiter=10
 
         # accumulate
         append!(em_times, its)
@@ -269,8 +254,7 @@ function kalman_filter_smoother_lag1(zAll, oIndAll, tcAll, I_z_t, f_t, n_c, n_p,
 
     x_pred[1] = AAll[1]*Diagonal(θF)*BAll[1]*a0
     P_pred[1] = AAll[1]*Diagonal(θF)*BAll[1]*Σx*(AAll[1]*Diagonal(θF)*BAll[1])' + DAll[1]*Σw*DAll[1]'
-    xpInit = f_t[:,1:size(θg,1)]*θg
-    x_pred[1][1:n_p] = xpInit[1,:]'
+    #xpInit = f_t[:,1:size(θg,1)]*θg
 
     # Kalman Filter
     for t = 1:T

@@ -197,7 +197,7 @@ function em_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
 
       ψ,
 
-      maxiter=1, tol=1e-8, verbose=true, # Should be 4
+      maxiter=4, tol=1e-8, verbose=true, # Should be 4
 
       θg_bool=false
 
@@ -255,7 +255,7 @@ function nm_on_chunk(ψ::NTuple{6,Any}, ins::KalmanData{Float64}, idxr::UnitRang
 
         a0, Σx, Σw, Σv, θF, θg;
 
-        tol=1e-8, maxiter=40, verbose=true, # Should be 160 (40)
+        tol=1e-8, maxiter=20, verbose=true, # Should be 160 (40)
 
         Newton_bool=false, θg_bool=false
 
@@ -289,15 +289,15 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
  
 
-    baseline_mse_NM = baseline_mse
+    # baseline_mse_NM = baseline_mse
 
-    baseline_mae_NM = baseline_mae
+    # baseline_mae_NM = baseline_mae
 
  
 
-    baseline_mse_EM = baseline_mse
+    # baseline_mse_EM = baseline_mse
 
-    baseline_mae_EM = baseline_mae
+    # baseline_mae_EM = baseline_mae
 
  
 
@@ -328,8 +328,8 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
  
 
     for (ci, idxr) in enumerate(ranges)
-      if ci == 1 || ci == 2
-        continue      # jump immediately to the next i
+      if ci == 1 || ci == 2 || ci == 3 || ci == 4
+        continue
       end
       if ci % 2 != 0
 
@@ -405,6 +405,8 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
         ci, length(ranges), first(idxr), excel_date_to_datestring(ins.times[first(idxr)]), last(idxr), excel_date_to_datestring(ins.times[last(idxr)]))
 
         # candidate ψ
+        prev_idxr = ranges[ci - 1]
+        combined_idxr = vcat(collect(prev_idxr), collect(idxr))
 
         Σw_NM, Σv_NM, a0_NM, Σx_NM, θF_NM, θg = ψ_cand_NM
 
@@ -412,7 +414,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
         x_f, P_f, x_s, P_s, P_l, oAll, EAll =
 
-        EKF.kalman_filter_smoother_lag1(
+        outputData.kalman_filter_xpinit(
 
           ins.zAll[idxr], ins.oIndAll[idxr], ins.tcAll[idxr], ins.I_z_t[idxr], ins.f_t,
 
@@ -430,7 +432,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
         )
 
-        fAll_NM, zPredAll_NM, innovationAll_NM, innovation_likelihood_NM = outputData.calculateRateAndRepricing(
+        _, zPredAll_NM, innovationAll_NM, innovation_likelihood_NM = outputData.calculateRateAndRepricing(
 
         EAll, ins.zAll[idxr], ins.I_z_t[idxr], x_s, oAll,
 
@@ -438,6 +440,41 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
         Int.(ins.n_z_t[idxr]), length(idxr), ins.n_s, ins.n_u, ins.G_t[idxr], Σv_NM, P_f
 
+      )
+      x_f, P_f, x_s, P_s, P_l, oAll, EAll =
+      outputData.kalman_filter_xpinit(
+        ins.zAll[combined_idxr],
+        ins.oIndAll[combined_idxr],
+        ins.tcAll[combined_idxr],
+        ins.I_z_t[combined_idxr],
+        ins.f_t,
+        ins.n_c, ins.n_p, ins.n_s,
+        length(combined_idxr),
+        ins.n_u, ins.n_x,
+        Int.(ins.n_z_t[combined_idxr]),
+        ins.A_t[combined_idxr], ins.B_t[combined_idxr],
+        ins.D_t[combined_idxr], ins.G_t[combined_idxr],
+        Σw_NM, Σv_NM, a0_NM, Σx_NM, θF_NM, θg,
+        ins.firstDates[combined_idxr],
+        ins.tradeDates[combined_idxr],
+        ins.ecbRatechangeDates,
+        ins.T0All[combined_idxr],
+        ins.TAll[combined_idxr]
+      )
+      fAll_NM, _, _, _ =
+      outputData.calculateRateAndRepricing(
+        EAll,
+        ins.zAll[combined_idxr],
+        ins.I_z_t[combined_idxr],
+        x_s, oAll,
+        ins.oIndAll[combined_idxr],
+        ins.tcAll[combined_idxr],
+        θg,
+        Int.(ins.n_z_t[combined_idxr]),
+        length(combined_idxr),
+        ins.n_s, ins.n_u,
+        ins.G_t[combined_idxr],
+        Σv_NM, P_f
       )
 
         # zPredAll_NM, innovationAll_NM, innovation_likelihood_NM = EKF.calcOutOfSample(
@@ -466,7 +503,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
         x_f, P_f, x_s, P_s, P_l, oAll, EAll =
 
-        EKF.kalman_filter_smoother_lag1(
+        outputData.kalman_filter_xpinit(
 
           ins.zAll[idxr], ins.oIndAll[idxr], ins.tcAll[idxr], ins.I_z_t[idxr], ins.f_t,
 
@@ -484,7 +521,7 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
         )
 
-        fAll_EM, zPredAll_EM, innovationAll_EM, innovation_likelihood_EM = outputData.calculateRateAndRepricing(
+        _, zPredAll_EM, innovationAll_EM, innovation_likelihood_EM = outputData.calculateRateAndRepricing(
 
         EAll, ins.zAll[idxr], ins.I_z_t[idxr], x_s, oAll,
 
@@ -494,6 +531,41 @@ function rolling_optimize(ins::KalmanData{Float64}, outs::KalmanData{Float64}, �
 
         )
 
+        x_f, P_f, x_s, P_s, P_l, oAll, EAll =
+        outputData.kalman_filter_xpinit(
+          ins.zAll[combined_idxr],
+          ins.oIndAll[combined_idxr],
+          ins.tcAll[combined_idxr],
+          ins.I_z_t[combined_idxr],
+          ins.f_t,
+          ins.n_c, ins.n_p, ins.n_s,
+          length(combined_idxr),
+          ins.n_u, ins.n_x,
+          Int.(ins.n_z_t[combined_idxr]),
+          ins.A_t[combined_idxr], ins.B_t[combined_idxr],
+          ins.D_t[combined_idxr], ins.G_t[combined_idxr],
+          Σw_EM, Σv_EM, a0_EM, Σx_EM, θF_EM, θg,
+          ins.firstDates[combined_idxr],
+          ins.tradeDates[combined_idxr],
+          ins.ecbRatechangeDates,
+          ins.T0All[combined_idxr],
+          ins.TAll[combined_idxr]
+        )
+        fAll_EM, _, _, _ =
+        outputData.calculateRateAndRepricing(
+          EAll,
+          ins.zAll[combined_idxr],
+          ins.I_z_t[combined_idxr],
+          x_s, oAll,
+          ins.oIndAll[combined_idxr],
+          ins.tcAll[combined_idxr],
+          θg,
+          Int.(ins.n_z_t[combined_idxr]),
+          length(combined_idxr),
+          ins.n_s, ins.n_u,
+          ins.G_t[combined_idxr],
+          Σv_EM, P_f
+        )
         # zPredAll_EM, innovationAll_EM, innovation_likelihood_EM = EKF.calcOutOfSample(
 
         #   ins.zAll[idxr], ins.oIndAll[idxr], ins.tcAll[idxr], ins.I_z_t[idxr],
