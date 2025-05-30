@@ -1,7 +1,7 @@
 function [bar_d_matrix, z_matrix, p_matrix, alpha_matrix, significance_matrix] = model_comparason_likelihood(model_list, likelihoods, significance_level)
     % Number of models
-    T = length(likelihoods.(model_list(1)));
-
+    % T = length(likelihoods.(model_list(1)));
+    T = size(likelihoods,1);
     model_count = length(model_list);
 
     % Initialize results matrices
@@ -21,13 +21,13 @@ function [bar_d_matrix, z_matrix, p_matrix, alpha_matrix, significance_matrix] =
             model_1 = model_list(i);
             model_2 = model_list(j);
 
-            ell_i = likelihoods.(model_1);
-            ell_j= likelihoods.(model_2);
+            ell_i = likelihoods(:,i);
+            ell_j= likelihoods(:,j);
 
             % Compute d_{i,k} via double loop
-            d = zeros(T);
+            d = zeros(T,1);
             for t = 1:T
-                d(t) = (abs(ell_i{t})) - abs((ell_j{t}));
+                d(t,1) = abs(ell_i{t}) - abs(ell_j{t});
             end
             
             % Compute bar_d
